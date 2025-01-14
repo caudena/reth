@@ -1,5 +1,5 @@
 use alloy_consensus::BlockHeader;
-use alloy_primitives::{keccak256, B256, U256};
+use alloy_primitives::{keccak256, B256};
 use alloy_rpc_types_debug::ExecutionWitness;
 use eyre::OptionExt;
 use pretty_assertions::Comparison;
@@ -12,8 +12,8 @@ use reth_primitives::{NodePrimitives, SealedBlockWithSenders, SealedHeader};
 use reth_primitives_traits::SignedTransaction;
 use reth_provider::{BlockExecutionOutput, ChainSpecProvider, StateProviderFactory};
 use reth_revm::{
-    database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
-    primitives::EnvWithHandlerCfg, DatabaseCommit, StateBuilder,
+    database::StateProviderDatabase, db::states::bundle_state::BundleRetention, DatabaseCommit,
+    StateBuilder,
 };
 use reth_rpc_api::DebugApiClient;
 use reth_tracing::tracing::warn;
@@ -76,20 +76,14 @@ where
             .with_bundle_update()
             .build();
 
-        // Setup environment for the execution.
-        let (cfg, block_env) = self.evm_config.cfg_and_block_env(block.header(), U256::MAX);
-
         // Setup EVM
-        let mut evm = self.evm_config.evm_with_env(
-            &mut db,
-            EnvWithHandlerCfg::new_with_cfg_env(cfg, block_env, Default::default()),
-        );
+        let mut evm = self.evm_config.evm_for_block(&mut db, block.header());
 
         let mut system_caller =
             SystemCaller::new(self.evm_config.clone(), self.provider.chain_spec());
 
         // Apply pre-block system contract calls.
-        system_caller.apply_pre_execution_changes(&block.clone().unseal().block, &mut evm)?;
+        system_caller.apply_pre_execution_changes(block.header(), &mut evm)?;
 
         // Re-execute all of the transactions in the block to load all touched accounts into
         // the cache DB.
@@ -110,7 +104,6 @@ where
         let balance_increments = post_block_balance_increments(
             self.provider.chain_spec().as_ref(),
             &block.clone().unseal().block,
-            U256::MAX,
         );
 
         // increment balances

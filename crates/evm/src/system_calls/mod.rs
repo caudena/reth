@@ -94,26 +94,25 @@ where
     Chainspec: EthereumHardforks,
 {
     /// Apply pre execution changes.
-    pub fn apply_pre_execution_changes<DB, Ext, Block>(
+    pub fn apply_pre_execution_changes<DB, Ext>(
         &mut self,
-        block: &Block,
+        header: &EvmConfig::Header,
         evm: &mut Evm<'_, Ext, DB>,
     ) -> Result<(), BlockExecutionError>
     where
         DB: Database + DatabaseCommit,
         DB::Error: Display,
-        Block: reth_primitives_traits::Block<Header = EvmConfig::Header>,
     {
         self.apply_blockhashes_contract_call(
-            block.header().timestamp(),
-            block.header().number(),
-            block.header().parent_hash(),
+            header.timestamp(),
+            header.number(),
+            header.parent_hash(),
             evm,
         )?;
         self.apply_beacon_root_contract_call(
-            block.header().timestamp(),
-            block.header().number(),
-            block.header().parent_beacon_block_root(),
+            header.timestamp(),
+            header.number(),
+            header.parent_beacon_block_root(),
             evm,
         )?;
 
@@ -134,19 +133,13 @@ where
         // Collect all EIP-7685 requests
         let withdrawal_requests = self.apply_withdrawal_requests_contract_call(evm)?;
         if !withdrawal_requests.is_empty() {
-            requests.push_request(
-                core::iter::once(WITHDRAWAL_REQUEST_TYPE).chain(withdrawal_requests).collect(),
-            );
+            requests.push_request_with_type(WITHDRAWAL_REQUEST_TYPE, withdrawal_requests);
         }
 
         // Collect all EIP-7251 requests
         let consolidation_requests = self.apply_consolidation_requests_contract_call(evm)?;
         if !consolidation_requests.is_empty() {
-            requests.push_request(
-                core::iter::once(CONSOLIDATION_REQUEST_TYPE)
-                    .chain(consolidation_requests)
-                    .collect(),
-            );
+            requests.push_request_with_type(CONSOLIDATION_REQUEST_TYPE, consolidation_requests);
         }
 
         Ok(requests)

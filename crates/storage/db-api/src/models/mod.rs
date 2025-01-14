@@ -194,8 +194,8 @@ macro_rules! impl_compression_for_compact {
             impl$(<$($generic: core::fmt::Debug + Send + Sync + Compact),*>)? Compress for $name$(<$($generic),*>)? {
                 type Compressed = Vec<u8>;
 
-                fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(self, buf: &mut B) {
-                    let _ = Compact::to_compact(&self, buf);
+                fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(&self, buf: &mut B) {
+                    let _ = Compact::to_compact(self, buf);
                 }
             }
 
@@ -235,6 +235,14 @@ impl_compression_for_compact!(
     GenesisAccount
 );
 
+#[cfg(feature = "op")]
+mod op {
+    use super::*;
+    use reth_optimism_primitives::{OpReceipt, OpTransactionSigned};
+
+    impl_compression_for_compact!(OpTransactionSigned, OpReceipt);
+}
+
 macro_rules! impl_compression_fixed_compact {
     ($($name:tt),+) => {
         $(
@@ -245,8 +253,8 @@ macro_rules! impl_compression_fixed_compact {
                     Some(self.as_ref())
                 }
 
-                fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(self, buf: &mut B) {
-                    let _  = Compact::to_compact(&self, buf);
+                fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(&self, buf: &mut B) {
+                    let _  = Compact::to_compact(self, buf);
                 }
             }
 
