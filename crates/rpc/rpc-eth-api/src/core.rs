@@ -32,12 +32,17 @@ use alloy_rpc_types::Block;
 use alloy_rpc_types_eth::BlockTransactions;
 use alloy_rpc_types_eth::Header;
 
+#[cfg(not(feature = "optimism"))]
+use alloy_consensus::TxEnvelope;
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::OpTxEnvelope;
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::OpTxEnvelope::Deposit;
 
 use alloy_network::{ReceiptResponse, TransactionResponse};
+
+#[cfg(not(feature = "optimism"))]
+use reth_node_api::BlockBody;
 
 use alloy_primitives::PrimitiveSignature as Alloy_Signature;
 use revm_inspectors::tracing::{parity::populate_state_diff, TracingInspectorConfig};
@@ -47,6 +52,9 @@ use revm_primitives::FixedBytes;
 use jsonrpsee_types::ErrorObjectOwned;
 
 use crate::helpers::data::{EnrichedBlock, EnrichedTransaction};
+
+#[cfg(not(feature = "optimism"))]
+use alloy_rpc_types_trace::parity::LocalizedTransactionTrace;
 
 //Custom imports
 
@@ -582,6 +590,30 @@ where
 
         let block = EthBlocks::rpc_block(self, BlockId::Number(number), true).await?.unwrap();
 
+        #[cfg(not(feature = "optimism"))]
+        let block_rewards_task = tokio::spawn({
+            let self_clone = self.clone();
+
+            let number = number.as_number().unwrap();
+            
+            async move {
+                let maybe_block = self_clone.block_with_senders(BlockId::number(number)).await.unwrap();
+                let mut trace_rewards: Vec<LocalizedTransactionTrace> = Vec::new();
+
+                if let Some(block) = maybe_block {
+                    if let Ok(Some(base_block_reward)) = self_clone.calculate_base_block_reward(block.header()) {
+                        trace_rewards.extend(self_clone.extract_reward_traces(
+                            block.header(),
+                            block.body().ommers(),
+                            base_block_reward,
+                        ));
+                    }
+                }
+                
+                trace_rewards
+            }
+        });
+
         if trx_receipts.len() != block.transactions.len() {
             let trx_trace_len_error = ErrorObjectOwned::owned(
                 1,
@@ -631,7 +663,7 @@ where
                 #[cfg(not(feature = "optimism"))]
                 {
                     alloy_trx = serde_json::from_str::<alloy_rpc_types_eth::Transaction>(&json_trx).unwrap();
-                    alloy_receipt = serde_json::from_str::<op_alloy_rpc_types::OpTransactionReceipt>(&json_receipt).unwrap();
+                    alloy_receipt = serde_json::from_str::<alloy_rpc_types_eth::TransactionReceipt>(&json_receipt).unwrap();
                 }
 
                 let mut alloy_public_key = String::new();
@@ -656,7 +688,7 @@ where
                     let mut tx_sig: Option<Alloy_Signature> = None;
 
                     #[cfg(not(feature = "optimism"))]
-                    match TxEnvelope::try_from(alloy_trx.inner.inner.clone()) {
+                    match TxEnvelope::try_from(alloy_trx.inner.clone()) {
                         Ok(tx_envelope) => match tx_envelope {
                             TxEnvelope::Legacy(typed_tx) => {
                                 tx_message_hash = Some(typed_tx.signature_hash());
@@ -677,14 +709,6 @@ where
                             TxEnvelope::Eip7702(typed_tx) => {
                                 tx_message_hash = Some(typed_tx.signature_hash());
                                 tx_sig = Some(typed_tx.signature().clone());
-                            }
-                            _ => {
-                                let trx_trace_hash_error = ErrorObjectOwned::owned(
-                                    3,
-                                    "Unmatched transaction type",
-                                    None::<()>,
-                                );
-                                return Err(trx_trace_hash_error);
                             }
                         },
                         Err(e) => {
@@ -788,7 +812,15 @@ where
             withdrawals: block.withdrawals,
         };
 
-        let rich_block: EnrichedBlock = EnrichedBlock { inner: e_block, rewards: Vec::new() };
+        #[allow(unused_assignments)]
+        let mut block_rewards = vec![];
+
+        #[cfg(not(feature = "optimism"))]
+        {
+            block_rewards = block_rewards_task.await.unwrap();
+        }
+
+        let rich_block: EnrichedBlock = EnrichedBlock { inner: e_block, rewards: block_rewards };
 
         Ok(Some(rich_block))
     }

@@ -8428,6 +8428,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "jsonrpsee-core",
  "jsonrpsee-types",
  "op-alloy-consensus",

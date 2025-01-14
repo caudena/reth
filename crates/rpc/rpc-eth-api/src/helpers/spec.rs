@@ -10,6 +10,11 @@ use reth_provider::{BlockNumReader, ChainSpecProvider, StageCheckpointReader};
 
 use crate::{helpers::EthSigner, RpcNodeCore};
 
+//Custom imports
+use alloy_rpc_types_trace::parity::LocalizedTransactionTrace;
+use reth_primitives_traits::BlockHeader;
+use reth_rpc_eth_types::EthApiError;
+
 /// `Eth` API trait.
 ///
 /// Defines core functionality of the `eth` API implementation.
@@ -87,4 +92,18 @@ pub trait EthApiSpec:
         };
         Ok(status)
     }
+
+    ///Calculate block rewards
+    fn calculate_base_block_reward<H: BlockHeader>(
+        &self,
+        header: &H,
+    ) -> Result<Option<u128>, EthApiError>;
+
+    ///Extract block rewards
+    fn extract_reward_traces<H: BlockHeader>(
+        &self,
+        header: &H,
+        ommers: Option<&[H]>,
+        base_block_reward: u128,
+    ) -> Vec<LocalizedTransactionTrace>;
 }
