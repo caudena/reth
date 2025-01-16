@@ -69,7 +69,7 @@ use std::{
 };
 use tokio::sync::{mpsc::{self, UnboundedSender}, oneshot::{self, error::RecvError}};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
-use tracing::{debug, trace};
+use tracing::{debug, trace, error};
 
 /// The future for importing transactions into the pool.
 ///
@@ -512,8 +512,15 @@ where
         peer_id: PeerId,
         msg: NewPooledTransactionHashes,
     ) {
-        let _ = self.trx_events.as_ref().unwrap().send(
+        let send_status = self.trx_events.as_ref().unwrap().send(
             NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() });
+
+        match send_status{
+            Ok(_)=>{},
+            Err(err)=>{
+                error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
+            }
+        }
         
         // If the node is initially syncing, ignore transactions
         if self.network.is_initially_syncing() {
@@ -1167,8 +1174,16 @@ where
                     });
                 }
 
-                let _ = self.trx_events.as_ref().unwrap().send(
+                let send_status = self.trx_events.as_ref().unwrap().send(
             NetworkTransactionEvent::IncomingTransactions { peer_id, msg: reth_eth_wire::Transactions(transactions_msg) });
+
+            match send_status{
+                Ok(_)=>{},
+                Err(err)=>{
+                    error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
+                }
+            }
+
         
                 let has_blob_txs = msg.has_eip4844();
 
