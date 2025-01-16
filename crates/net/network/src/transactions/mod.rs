@@ -67,7 +67,7 @@ use std::{
     task::{Context, Poll},
     time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, oneshot, oneshot::error::RecvError};
+use tokio::sync::{mpsc::{self, UnboundedSender}, oneshot::{self, error::RecvError}};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 use tracing::{debug, trace};
 
@@ -229,6 +229,8 @@ pub struct TransactionsManager<Pool, N: NetworkPrimitives = EthNetworkPrimitives
     ///
     /// From which we get all new incoming transaction related messages.
     network_events: EventStream<NetworkEvent<PeerRequest<N>>>,
+    ///Tx sender
+    trx_events: Option<UnboundedSender<NetworkTransactionEvent>>,
     /// Transaction fetcher to handle inflight and missing transaction requests.
     transaction_fetcher: TransactionFetcher<N>,
     /// All currently pending transactions grouped by peers.
@@ -311,6 +313,7 @@ impl<Pool: TransactionPool, N: NetworkPrimitives> TransactionsManager<Pool, N> {
             pool,
             network,
             network_events,
+            trx_events: None,
             transaction_fetcher,
             transactions_by_peers: Default::default(),
             pool_imports: Default::default(),
@@ -329,6 +332,19 @@ impl<Pool: TransactionPool, N: NetworkPrimitives> TransactionsManager<Pool, N> {
             config: transactions_manager_config,
             metrics,
         }
+    }
+
+    ///Trx Manager with sender
+    pub fn new_with_sender(
+        network: NetworkHandle<N>,
+        pool: Pool,
+        from_network: mpsc::UnboundedReceiver<NetworkTransactionEvent<N>>,
+        transactions_manager_config: TransactionsManagerConfig,
+        trx_events: Option<UnboundedSender<NetworkTransactionEvent>>,
+    ) -> Self {
+        let mut manager = Self::new(network, pool, from_network, transactions_manager_config);
+        manager.trx_events = trx_events;
+        manager
     }
 
     /// Returns a new handle that can send commands to this type.
@@ -482,6 +498,9 @@ where
         peer_id: PeerId,
         msg: NewPooledTransactionHashes,
     ) {
+        let _ = self.trx_events.as_ref().unwrap().send(
+            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() });
+        
         // If the node is initially syncing, ignore transactions
         if self.network.is_initially_syncing() {
             return
@@ -1120,6 +1139,20 @@ where
                 // ensure we didn't receive any blob transactions as these are disallowed to be
                 // broadcasted in full
 
+                let mut transactions_msg = vec![];
+
+                let transactions = Transactions(msg.clone().0);
+                for trx in transactions.0{
+                      transactions_msg.push(TransactionSigned{
+                        hash: (*trx.tx_hash()).into(),
+                        signature: trx.signature().clone(),
+                        transaction: Default::default(),
+                    });
+                }
+
+                let _ = self.trx_events.as_ref().unwrap().send(
+            NetworkTransactionEvent::IncomingTransactions { peer_id, msg: reth_eth_wire::Transactions(transactions_msg) });
+        
                 let has_blob_txs = msg.has_eip4844();
 
                 let non_blob_txs = msg
