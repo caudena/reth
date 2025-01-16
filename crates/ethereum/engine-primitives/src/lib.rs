@@ -9,8 +9,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 mod payload;
-use std::sync::Arc;
-
 use alloy_rpc_types_engine::{ExecutionPayload, ExecutionPayloadSidecar, PayloadError};
 pub use alloy_rpc_types_engine::{
     ExecutionPayloadEnvelopeV2, ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4,
@@ -18,13 +16,15 @@ pub use alloy_rpc_types_engine::{
 };
 pub use payload::{EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_chainspec::ChainSpec;
-use reth_engine_primitives::{EngineTypes, EngineValidator, PayloadValidator};
+use reth_engine_primitives::{BuiltPayload, EngineTypes, EngineValidator, PayloadValidator};
 use reth_payload_primitives::{
     validate_version_specific_fields, EngineApiMessageVersion, EngineObjectValidationError,
     PayloadOrAttributes, PayloadTypes,
 };
 use reth_payload_validator::ExecutionPayloadValidator;
-use reth_primitives::{Block, SealedBlock};
+use reth_primitives::{Block, NodePrimitives, SealedBlock, SealedBlockFor};
+use reth_rpc_types_compat::engine::payload::block_to_payload;
+use std::sync::Arc;
 
 /// The types used in the default mainnet ethereum beacon consensus engine.
 #[derive(Debug, Default, Clone, serde::Deserialize, serde::Serialize)]
@@ -39,9 +39,11 @@ impl<T: PayloadTypes> PayloadTypes for EthEngineTypes<T> {
     type PayloadBuilderAttributes = T::PayloadBuilderAttributes;
 }
 
-impl<T: PayloadTypes> EngineTypes for EthEngineTypes<T>
+impl<T> EngineTypes for EthEngineTypes<T>
 where
-    T::BuiltPayload: TryInto<ExecutionPayloadV1>
+    T: PayloadTypes,
+    T::BuiltPayload: BuiltPayload<Primitives: NodePrimitives<Block = reth_primitives::Block>>
+        + TryInto<ExecutionPayloadV1>
         + TryInto<ExecutionPayloadEnvelopeV2>
         + TryInto<ExecutionPayloadEnvelopeV3>
         + TryInto<ExecutionPayloadEnvelopeV4>,
@@ -50,6 +52,14 @@ where
     type ExecutionPayloadEnvelopeV2 = ExecutionPayloadEnvelopeV2;
     type ExecutionPayloadEnvelopeV3 = ExecutionPayloadEnvelopeV3;
     type ExecutionPayloadEnvelopeV4 = ExecutionPayloadEnvelopeV4;
+
+    fn block_to_payload(
+        block: SealedBlockFor<
+            <<Self::BuiltPayload as BuiltPayload>::Primitives as NodePrimitives>::Block,
+        >,
+    ) -> (ExecutionPayload, ExecutionPayloadSidecar) {
+        block_to_payload(block)
+    }
 }
 
 /// A default payload type for [`EthEngineTypes`]

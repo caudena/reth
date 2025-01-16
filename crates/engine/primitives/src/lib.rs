@@ -14,13 +14,16 @@ use core::fmt;
 
 use alloy_consensus::BlockHeader;
 use alloy_rpc_types_engine::{ExecutionPayload, ExecutionPayloadSidecar, PayloadError};
-pub use error::BeaconOnNewPayloadError;
+pub use error::*;
 
 mod forkchoice;
 pub use forkchoice::{ForkchoiceStateHash, ForkchoiceStateTracker, ForkchoiceStatus};
 
 mod message;
-pub use message::{BeaconEngineMessage, OnForkChoiceUpdated};
+pub use message::*;
+
+mod event;
+pub use event::*;
 
 mod invalid_block_hook;
 pub use invalid_block_hook::InvalidBlockHook;
@@ -30,7 +33,7 @@ pub use reth_payload_primitives::{
     PayloadTypes,
 };
 use reth_payload_primitives::{InvalidPayloadAttributesError, PayloadAttributes};
-use reth_primitives::SealedBlockFor;
+use reth_primitives::{NodePrimitives, SealedBlockFor};
 use reth_primitives_traits::Block;
 use serde::{de::DeserializeOwned, ser::Serialize};
 
@@ -80,6 +83,13 @@ pub trait EngineTypes:
         + Send
         + Sync
         + 'static;
+
+    /// Converts a [`BuiltPayload`] into an [`ExecutionPayload`] and [`ExecutionPayloadSidecar`].
+    fn block_to_payload(
+        block: SealedBlockFor<
+            <<Self::BuiltPayload as BuiltPayload>::Primitives as NodePrimitives>::Block,
+        >,
+    ) -> (ExecutionPayload, ExecutionPayloadSidecar);
 }
 
 /// Type that validates an [`ExecutionPayload`].

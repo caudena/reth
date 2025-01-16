@@ -17,7 +17,6 @@ use std::{
 
 use alloy_eips::BlockNumHash;
 use futures_util::FutureExt;
-use reth_blockchain_tree::noop::NoopBlockchainTree;
 use reth_chainspec::{ChainSpec, MAINNET};
 use reth_consensus::test_utils::TestConsensus;
 use reth_db::{
@@ -47,13 +46,11 @@ use reth_node_ethereum::{
 };
 use reth_payload_builder::noop::NoopPayloadBuilderService;
 use reth_primitives::{BlockExt, EthPrimitives, Head, SealedBlockWithSenders, TransactionSigned};
-use reth_provider::{
-    providers::{BlockchainProvider, StaticFileProvider},
-    BlockReader, EthStorage, ProviderFactory,
-};
+use reth_provider::{providers::StaticFileProvider, BlockReader, EthStorage, ProviderFactory};
 use reth_tasks::TaskManager;
 use reth_transaction_pool::test_utils::{testing_pool, TestPool};
 
+use reth_provider::providers::BlockchainProvider;
 use tempfile::TempDir;
 use thiserror::Error;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
@@ -175,7 +172,8 @@ pub type Adapter = NodeAdapter<
     RethFullAdapter<TmpDB, TestNode>,
     <<TestNode as Node<
         FullNodeTypesAdapter<
-            NodeTypesWithDBAdapter<TestNode, TmpDB>,
+            TestNode,
+            TmpDB,
             BlockchainProvider<NodeTypesWithDBAdapter<TestNode, TmpDB>>,
         >,
     >>::ComponentsBuilder as NodeComponentsBuilder<RethFullAdapter<TmpDB, TestNode>>>::Components,
@@ -273,8 +271,7 @@ pub async fn test_exex_context_with_chain_spec(
     );
 
     let genesis_hash = init_genesis(&provider_factory)?;
-    let provider =
-        BlockchainProvider::new(provider_factory.clone(), Arc::new(NoopBlockchainTree::default()))?;
+    let provider = BlockchainProvider::new(provider_factory.clone())?;
 
     let network_manager = NetworkManager::new(
         NetworkConfigBuilder::new(SecretKey::new(&mut rand::thread_rng()))
@@ -290,7 +287,7 @@ pub async fn test_exex_context_with_chain_spec(
 
     let (_, payload_builder) = NoopPayloadBuilderService::<EthEngineTypes>::new();
 
-    let components = NodeAdapter::<FullNodeTypesAdapter<_, _>, _> {
+    let components = NodeAdapter::<FullNodeTypesAdapter<_, _, _>, _> {
         components: Components {
             transaction_pool,
             evm_config,

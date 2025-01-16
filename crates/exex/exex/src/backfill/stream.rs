@@ -8,7 +8,7 @@ use futures::{
 use reth_evm::execute::{BlockExecutionError, BlockExecutionOutput, BlockExecutorProvider};
 use reth_node_api::NodePrimitives;
 use reth_primitives::{BlockWithSenders, EthPrimitives};
-use reth_provider::{BlockReader, Chain, HeaderProvider, StateProviderFactory};
+use reth_provider::{BlockReader, Chain, StateProviderFactory};
 use reth_prune_types::PruneModes;
 use reth_stages_api::ExecutionStageThresholds;
 use reth_tracing::tracing::debug;
@@ -114,8 +114,8 @@ where
 
 impl<E, P> Stream for StreamBackfillJob<E, P, SingleBlockStreamItem<E::Primitives>>
 where
-    E: BlockExecutorProvider<Primitives: NodePrimitives<Block = P::Block>> + Clone + Send + 'static,
-    P: HeaderProvider + BlockReader + StateProviderFactory + Clone + Send + Unpin + 'static,
+    E: BlockExecutorProvider<Primitives: NodePrimitives<Block = P::Block>> + Clone + 'static,
+    P: BlockReader + StateProviderFactory + Clone + Unpin + 'static,
 {
     type Item = BackfillJobResult<SingleBlockStreamItem<E::Primitives>>;
 
@@ -147,8 +147,8 @@ where
 
 impl<E, P> Stream for StreamBackfillJob<E, P, BatchBlockStreamItem<E::Primitives>>
 where
-    E: BlockExecutorProvider<Primitives: NodePrimitives<Block = P::Block>> + Clone + Send + 'static,
-    P: HeaderProvider + BlockReader + StateProviderFactory + Clone + Send + Unpin + 'static,
+    E: BlockExecutorProvider<Primitives: NodePrimitives<Block = P::Block>> + Clone + 'static,
+    P: BlockReader + StateProviderFactory + Clone + Unpin + 'static,
 {
     type Item = BackfillJobResult<BatchBlockStreamItem<E::Primitives>>;
 
@@ -235,8 +235,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
         backfill::test_utils::{
             blocks_and_execution_outcome, blocks_and_execution_outputs, chain_spec,
@@ -244,10 +242,9 @@ mod tests {
         BackfillJobFactory,
     };
     use futures::StreamExt;
-    use reth_blockchain_tree::noop::NoopBlockchainTree;
     use reth_db_common::init::init_genesis;
     use reth_evm_ethereum::execute::EthExecutorProvider;
-    use reth_primitives::public_key_to_address;
+    use reth_primitives_traits::crypto::secp256k1::public_key_to_address;
     use reth_provider::{
         providers::BlockchainProvider, test_utils::create_test_provider_factory_with_chain_spec,
     };
@@ -268,10 +265,7 @@ mod tests {
         let executor = EthExecutorProvider::ethereum(chain_spec.clone());
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         init_genesis(&provider_factory)?;
-        let blockchain_db = BlockchainProvider::new(
-            provider_factory.clone(),
-            Arc::new(NoopBlockchainTree::default()),
-        )?;
+        let blockchain_db = BlockchainProvider::new(provider_factory.clone())?;
 
         // Create first 2 blocks
         let blocks_and_execution_outcomes =
@@ -309,10 +303,7 @@ mod tests {
         let executor = EthExecutorProvider::ethereum(chain_spec.clone());
         let provider_factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
         init_genesis(&provider_factory)?;
-        let blockchain_db = BlockchainProvider::new(
-            provider_factory.clone(),
-            Arc::new(NoopBlockchainTree::default()),
-        )?;
+        let blockchain_db = BlockchainProvider::new(provider_factory.clone())?;
 
         // Create first 2 blocks
         let (blocks, execution_outcome) =

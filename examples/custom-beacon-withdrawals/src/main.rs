@@ -9,23 +9,20 @@ use alloy_sol_types::SolCall;
 #[cfg(feature = "optimism")]
 use reth::revm::primitives::OptimismFields;
 use reth::{
-    api::{ConfigureEvm, ConfigureEvmEnv, NodeTypesWithEngine},
+    api::{ConfigureEvm, NodeTypesWithEngine},
     builder::{components::ExecutorBuilder, BuilderContext, FullNodeTypes},
     cli::Cli,
     providers::ProviderError,
     revm::{
         interpreter::Host,
-        primitives::{address, Address, Bytes, Env, EnvWithHandlerCfg, TransactTo, TxEnv, U256},
+        primitives::{address, Address, Bytes, Env, TransactTo, TxEnv, U256},
         Database, DatabaseCommit, Evm, State,
     },
 };
 use reth_chainspec::{ChainSpec, EthereumHardforks};
-use reth_evm::{
-    env::EvmEnv,
-    execute::{
-        BlockExecutionError, BlockExecutionStrategy, BlockExecutionStrategyFactory, ExecuteOutput,
-        InternalBlockExecutionError,
-    },
+use reth_evm::execute::{
+    BlockExecutionError, BlockExecutionStrategy, BlockExecutionStrategyFactory, ExecuteOutput,
+    InternalBlockExecutionError,
 };
 use reth_evm_ethereum::EthEvmConfig;
 use reth_node_ethereum::{node::EthereumAddOns, BasicBlockExecutorProvider, EthereumNode};
@@ -120,26 +117,6 @@ where
     state: State<DB>,
 }
 
-impl<DB> CustomExecutorStrategy<DB>
-where
-    DB: Database<Error: Into<ProviderError> + Display>,
-{
-    /// Configures a new evm configuration and block environment for the given block.
-    ///
-    /// # Caution
-    ///
-    /// This does not initialize the tx environment.
-    fn evm_env_for_block(
-        &self,
-        header: &alloy_consensus::Header,
-        total_difficulty: U256,
-    ) -> EnvWithHandlerCfg {
-        let evm_env = self.evm_config.cfg_and_block_env(header, total_difficulty);
-        let EvmEnv { cfg_env_with_handler_cfg, block_env } = evm_env;
-        EnvWithHandlerCfg::new_with_cfg_env(cfg_env_with_handler_cfg, block_env, Default::default())
-    }
-}
-
 impl<DB> BlockExecutionStrategy for CustomExecutorStrategy<DB>
 where
     DB: Database<Error: Into<ProviderError> + Display>,
@@ -148,11 +125,7 @@ where
     type Primitives = EthPrimitives;
     type Error = BlockExecutionError;
 
-    fn apply_pre_execution_changes(
-        &mut self,
-        block: &BlockWithSenders,
-        _total_difficulty: U256,
-    ) -> Result<(), Self::Error> {
+    fn apply_pre_execution_changes(&mut self, block: &BlockWithSenders) -> Result<(), Self::Error> {
         // Set state clear flag if the block is after the Spurious Dragon hardfork.
         let state_clear_flag =
             (*self.chain_spec).is_spurious_dragon_active_at_block(block.header.number);
@@ -164,7 +137,6 @@ where
     fn execute_transactions(
         &mut self,
         _block: &BlockWithSenders,
-        _total_difficulty: U256,
     ) -> Result<ExecuteOutput<Receipt>, Self::Error> {
         Ok(ExecuteOutput { receipts: vec![], gas_used: 0 })
     }
@@ -172,11 +144,9 @@ where
     fn apply_post_execution_changes(
         &mut self,
         block: &BlockWithSenders,
-        total_difficulty: U256,
         _receipts: &[Receipt],
     ) -> Result<Requests, Self::Error> {
-        let env = self.evm_env_for_block(&block.header, total_difficulty);
-        let mut evm = self.evm_config.evm_with_env(&mut self.state, env);
+        let mut evm = self.evm_config.evm_for_block(&mut self.state, &block.header);
 
         if let Some(withdrawals) = block.body.withdrawals.as_ref() {
             apply_withdrawals_contract_call(withdrawals, &mut evm)?;

@@ -41,6 +41,7 @@ use reth::{
     primitives::{Block, EthPrimitives, SealedBlockFor, TransactionSigned},
     providers::{CanonStateSubscriptions, EthStorage, StateProviderFactory},
     rpc::{
+        compat::engine::payload::block_to_payload,
         eth::EthApi,
         types::engine::{ExecutionPayload, ExecutionPayloadSidecar, PayloadError},
     },
@@ -53,6 +54,7 @@ use reth_basic_payload_builder::{
     PayloadBuilder, PayloadConfig,
 };
 use reth_chainspec::{Chain, ChainSpec, ChainSpecProvider};
+use reth_engine_local::payload::UnsupportedLocalAttributes;
 use reth_ethereum_payload_builder::EthereumBuilderConfig;
 use reth_node_api::{
     payload::{EngineApiMessageVersion, EngineObjectValidationError, PayloadOrAttributes},
@@ -86,6 +88,9 @@ pub struct CustomPayloadAttributes {
     /// A custom field
     pub custom: u64,
 }
+
+// TODO(mattsse): remove this tmp workaround
+impl UnsupportedLocalAttributes for CustomPayloadAttributes {}
 
 /// Custom error type used in payload attributes validation
 #[derive(Debug, Error)]
@@ -170,6 +175,14 @@ impl EngineTypes for CustomEngineTypes {
     type ExecutionPayloadEnvelopeV2 = ExecutionPayloadEnvelopeV2;
     type ExecutionPayloadEnvelopeV3 = ExecutionPayloadEnvelopeV3;
     type ExecutionPayloadEnvelopeV4 = ExecutionPayloadEnvelopeV4;
+
+    fn block_to_payload(
+        block: SealedBlockFor<
+                <<Self::BuiltPayload as reth_node_api::BuiltPayload>::Primitives as reth_node_api::NodePrimitives>::Block,
+            >,
+    ) -> (ExecutionPayload, ExecutionPayloadSidecar) {
+        block_to_payload(block)
+    }
 }
 
 /// Custom engine validator

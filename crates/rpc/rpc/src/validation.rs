@@ -19,9 +19,7 @@ use reth_errors::{BlockExecutionError, ConsensusError, ProviderError};
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_primitives::{GotExpected, NodePrimitives, SealedBlockWithSenders, SealedHeader};
 use reth_primitives_traits::{constants::GAS_LIMIT_BOUND_DIVISOR, Block as _, BlockBody};
-use reth_provider::{
-    BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, StateProviderFactory,
-};
+use reth_provider::{BlockExecutionOutput, BlockReaderIdExt, StateProviderFactory};
 use reth_revm::{cached::CachedReads, database::StateProviderDatabase};
 use reth_rpc_api::BlockSubmissionValidationApiServer;
 use reth_rpc_server_types::result::internal_rpc_err;
@@ -45,7 +43,7 @@ where
     /// Create a new instance of the [`ValidationApi`]
     pub fn new(
         provider: Provider,
-        consensus: Arc<dyn FullConsensus<E::Primitives>>,
+        consensus: Arc<dyn FullConsensus<E::Primitives, Error = ConsensusError>>,
         executor_provider: E,
         config: ValidationApiConfig,
         task_spawner: Box<dyn TaskSpawner>,
@@ -104,10 +102,10 @@ where
         message: BidTrace,
         registered_gas_limit: u64,
     ) -> Result<(), ValidationApiError> {
-        self.validate_message_against_header(&block.header, &message)?;
+        self.validate_message_against_header(block.sealed_header(), &message)?;
 
-        self.consensus.validate_header_with_total_difficulty(&block.header, U256::MAX)?;
-        self.consensus.validate_header(&block.header)?;
+        self.consensus.validate_header_with_total_difficulty(block.sealed_header(), U256::MAX)?;
+        self.consensus.validate_header(block.sealed_header())?;
         self.consensus.validate_block_pre_execution(&block)?;
 
         if !self.disallow.is_empty() {
@@ -117,7 +115,7 @@ where
             if self.disallow.contains(&message.proposer_fee_recipient) {
                 return Err(ValidationApiError::Blacklist(message.proposer_fee_recipient))
             }
-            for (sender, tx) in block.senders.iter().zip(block.transactions()) {
+            for (sender, tx) in block.senders_iter().zip(block.transactions()) {
                 if self.disallow.contains(sender) {
                     return Err(ValidationApiError::Blacklist(*sender))
                 }
@@ -132,15 +130,14 @@ where
         let latest_header =
             self.provider.latest_header()?.ok_or_else(|| ValidationApiError::MissingLatestBlock)?;
 
-        if latest_header.hash() != block.header.parent_hash() {
+        if latest_header.hash() != block.parent_hash() {
             return Err(ConsensusError::ParentHashMismatch(
-                GotExpected { got: block.header.parent_hash(), expected: latest_header.hash() }
-                    .into(),
+                GotExpected { got: block.parent_hash(), expected: latest_header.hash() }.into(),
             )
             .into())
         }
-        self.consensus.validate_header_against_parent(&block.header, &latest_header)?;
-        self.validate_gas_limit(registered_gas_limit, &latest_header, &block.header)?;
+        self.consensus.validate_header_against_parent(block.sealed_header(), &latest_header)?;
+        self.validate_gas_limit(registered_gas_limit, &latest_header, block.sealed_header())?;
 
         let latest_header_hash = latest_header.hash();
         let state_provider = self.provider.state_by_block_hash(latest_header_hash)?;
@@ -152,18 +149,15 @@ where
 
         let block = block.unseal();
         let mut accessed_blacklisted = None;
-        let output = executor.execute_with_state_closure(
-            BlockExecutionInput::new(&block, U256::MAX),
-            |state| {
-                if !self.disallow.is_empty() {
-                    for account in state.cache.accounts.keys() {
-                        if self.disallow.contains(account) {
-                            accessed_blacklisted = Some(*account);
-                        }
+        let output = executor.execute_with_state_closure(&block, |state| {
+            if !self.disallow.is_empty() {
+                for account in state.cache.accounts.keys() {
+                    if self.disallow.contains(account) {
+                        accessed_blacklisted = Some(*account);
                     }
                 }
-            },
-        )?;
+            }
+        })?;
 
         // update the cached reads
         self.update_cached_reads(latest_header_hash, request_cache).await;
@@ -383,9 +377,8 @@ where
                     },
                     PraguePayloadFields {
                         requests: RequestsOrHash::Requests(
-                            request.request.execution_requests.into(),
+                            request.request.execution_requests.to_requests(),
                         ),
-                        target_blobs_per_block: request.request.target_blobs_per_block,
                     },
                 ),
             )?
@@ -467,7 +460,7 @@ pub struct ValidationApiInner<Provider, E: BlockExecutorProvider> {
     /// The provider that can interact with the chain.
     provider: Provider,
     /// Consensus implementation.
-    consensus: Arc<dyn FullConsensus<E::Primitives>>,
+    consensus: Arc<dyn FullConsensus<E::Primitives, Error = ConsensusError>>,
     /// Execution payload validator.
     payload_validator: Arc<dyn PayloadValidator<Block = <E::Primitives as NodePrimitives>::Block>>,
     /// Block executor factory.
