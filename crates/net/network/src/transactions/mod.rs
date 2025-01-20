@@ -1162,29 +1162,6 @@ where
             NetworkTransactionEvent::IncomingTransactions { peer_id, msg } => {
                 // ensure we didn't receive any blob transactions as these are disallowed to be
                 // broadcasted in full
-
-                let mut transactions_msg = vec![];
-
-                let transactions = Transactions(msg.clone().0);
-                for trx in transactions.0{
-                      transactions_msg.push(TransactionSigned{
-                        hash: (*trx.tx_hash()).into(),
-                        signature: trx.signature().clone(),
-                        transaction: Default::default(),
-                    });
-                }
-
-                let send_status = self.trx_events.as_ref().unwrap().send(
-            NetworkTransactionEvent::IncomingTransactions { peer_id, msg: reth_eth_wire::Transactions(transactions_msg) });
-
-            match send_status{
-                Ok(_)=>{},
-                Err(err)=>{
-                    error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
-                }
-            }
-
-        
                 let has_blob_txs = msg.has_eip4844();
 
                 let non_blob_txs = msg
@@ -1220,6 +1197,26 @@ where
         transactions: PooledTransactions<N::PooledTransaction>,
         source: TransactionSource,
     ) {
+        let mut transactions_msg = vec![];
+        
+        for trx in transactions.0.iter(){
+            transactions_msg.push(TransactionSigned{
+                hash: (*trx.tx_hash()).into(),
+                signature: trx.signature().clone(),
+                transaction: Default::default(),
+            });
+        }
+
+        let send_status = self.trx_events.as_ref().unwrap().send(
+            NetworkTransactionEvent::IncomingTransactions { peer_id, msg: reth_eth_wire::Transactions(transactions_msg) });
+
+        match send_status{
+            Ok(_)=>{},
+            Err(err)=>{
+                error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
+            }
+        }
+
         // If the node is pipeline syncing, ignore transactions
         if self.network.is_initially_syncing() {
             return
