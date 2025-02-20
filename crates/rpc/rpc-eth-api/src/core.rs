@@ -735,14 +735,6 @@ where
                             tx_sig = Some(*typed_tx.signature());
                         }
                         OpTxEnvelope::Deposit(_) => {}
-                        _ => {
-                            let trx_trace_hash_error = ErrorObjectOwned::owned(
-                                3,
-                                "Unmatched transaction type",
-                                None::<()>,
-                            );
-                            return Err(trx_trace_hash_error);
-                        }
                     } //match OpTxEnvelope
 
                     if tx_sig.is_none() || tx_message_hash.is_none() {
@@ -812,7 +804,7 @@ where
             withdrawals: block.withdrawals,
         };
 
-        #[allow(unused_assignments)]
+        #[allow(unused_assignments,unused_mut)]
         let mut block_rewards = vec![];
 
         #[cfg(not(feature = "optimism"))]
