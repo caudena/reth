@@ -40,6 +40,12 @@ use std::{fmt, sync::Arc};
 
 use crate::{OpEthApiError, SequencerClient};
 
+//custom imports
+use alloy_rpc_types_trace::parity::LocalizedTransactionTrace;
+use reth_primitives_traits::BlockHeader;
+use reth_rpc_eth_types::EthApiError;
+//custom imports
+
 /// Adapter for [`EthApiInner`], which holds all the data required to serve core `eth_` API.
 pub type EthApiNodeBackend<N> = EthApiInner<
     <N as RpcNodeCore>::Provider,
@@ -174,6 +180,24 @@ where
     #[inline]
     fn signers(&self) -> &parking_lot::RwLock<Vec<Box<dyn EthSigner<ProviderTx<Self::Provider>>>>> {
         self.inner.eth_api.signers()
+    }
+
+    ///Calculate block rewards
+    fn calculate_base_block_reward<H: BlockHeader>(
+        &self,
+        _header: &H,
+    ) -> Result<Option<u128>, EthApiError> {
+        Ok(None)
+    }
+
+    ///Extract block rewards
+    fn extract_reward_traces<H: BlockHeader>(
+        &self,
+        _header: &H,
+        _ommers: Option<&[H]>,
+        _base_block_reward: u128,
+    ) -> Vec<LocalizedTransactionTrace> {
+        Vec::new()
     }
 }
 
