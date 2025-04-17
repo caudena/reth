@@ -44,7 +44,7 @@ use alloy_network::{ReceiptResponse, TransactionResponse};
 #[cfg(not(feature = "optimism"))]
 use reth_node_api::BlockBody;
 
-use alloy_primitives::PrimitiveSignature as Alloy_Signature;
+use alloy_primitives::Signature as Alloy_Signature;
 use revm_inspectors::tracing::{parity::populate_state_diff, TracingInspectorConfig};
 use revm_primitives::{hex, FixedBytes};
 
