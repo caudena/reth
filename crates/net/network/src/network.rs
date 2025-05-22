@@ -51,7 +51,7 @@ pub struct NetworkHandle<N: NetworkPrimitives = EthNetworkPrimitives> {
 
 impl<N: NetworkPrimitives> NetworkHandle<N> {
     /// Creates a single new instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn new(
         num_active_peers: Arc<AtomicUsize>,
         listener_address: Arc<Mutex<SocketAddr>>,
@@ -439,7 +439,7 @@ struct NetworkInner<N: NetworkPrimitives = EthNetworkPrimitives> {
     secret_key: SecretKey,
     /// The identifier used by this node.
     local_peer_id: PeerId,
-    /// Access to the all the nodes.
+    /// Access to all the nodes.
     peers: PeersHandle,
     /// The mode of the network
     network_mode: NetworkMode,
@@ -505,7 +505,7 @@ pub(crate) enum NetworkHandleMessage<N: NetworkPrimitives = EthNetworkPrimitives
     EthMessage {
         /// The peer to send the message to.
         peer_id: PeerId,
-        /// The message to send to the peer's sessions.
+        /// The `eth` protocol message to send to the peer's session.
         message: PeerMessage<N>,
     },
     /// Applies a reputation change to the given peer.

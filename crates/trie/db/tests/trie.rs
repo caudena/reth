@@ -10,7 +10,7 @@ use reth_db_api::{
     cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO},
     transaction::{DbTx, DbTxMut},
 };
-use reth_primitives::{Account, StorageEntry};
+use reth_primitives_traits::{Account, StorageEntry};
 use reth_provider::{
     providers::ProviderNodeTypes, test_utils::create_test_provider_factory, DatabaseProviderRW,
     StorageTrieWriter, TrieWriter,
@@ -131,7 +131,7 @@ fn arbitrary_storage_root() {
 }
 
 #[test]
-// This ensures we dont add empty accounts to the trie
+// This ensures we don't add empty accounts to the trie
 fn test_empty_account() {
     let state: State = BTreeMap::from([
         (

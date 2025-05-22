@@ -5,17 +5,16 @@ use crate::{EthApiTypes, FromEthApiError, RpcNodeCore, RpcNodeCoreExt};
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_eips::BlockId;
 use alloy_primitives::{Address, Bytes, B256, U256};
-use alloy_rpc_types_eth::{Account, EIP1186AccountProofResponse};
+use alloy_rpc_types_eth::{Account, AccountInfo, EIP1186AccountProofResponse};
 use alloy_serde::JsonStorageKey;
 use futures::Future;
-use reth_chainspec::{EthChainSpec, EthereumHardforks};
+use reth_chainspec::{ChainSpecProvider, EthChainSpec, EthereumHardforks};
 use reth_errors::RethError;
-use reth_evm::{env::EvmEnv, ConfigureEvmEnv};
-use reth_provider::{
-    BlockIdReader, BlockNumReader, ChainSpecProvider, StateProvider, StateProviderBox,
-    StateProviderFactory,
-};
+use reth_evm::{ConfigureEvm, EvmEnvFor};
 use reth_rpc_eth_types::{EthApiError, PendingBlockEnv, RpcInvalidTransactionError};
+use reth_storage_api::{
+    BlockIdReader, BlockNumReader, StateProvider, StateProviderBox, StateProviderFactory,
+};
 use reth_transaction_pool::TransactionPool;
 
 /// Helper methods for `eth_` methods relating to state (accounts).
@@ -159,6 +158,35 @@ pub trait EthState: LoadState + SpawnBlocking {
             Ok(Some(Account { balance, nonce, code_hash, storage_root }))
         })
     }
+
+    /// Retrieves the account's balance, nonce, and code for a given address.
+    fn get_account_info(
+        &self,
+        address: Address,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<AccountInfo, Self::Error>> + Send {
+        self.spawn_blocking_io(move |this| {
+            let state = this.state_at_block_id(block_id)?;
+            let account = state
+                .basic_account(&address)
+                .map_err(Self::Error::from_eth_err)?
+                .unwrap_or_default();
+
+            let balance = account.balance;
+            let nonce = account.nonce;
+            let code = if account.get_bytecode_hash() == KECCAK_EMPTY {
+                Default::default()
+            } else {
+                state
+                    .account_code(&address)
+                    .map_err(Self::Error::from_eth_err)?
+                    .unwrap_or_default()
+                    .original_bytes()
+            };
+
+            Ok(AccountInfo { balance, nonce, code })
+        })
+    }
 }
 
 /// Loads state from database.
@@ -213,15 +241,14 @@ pub trait LoadState:
     fn evm_env_at(
         &self,
         at: BlockId,
-    ) -> impl Future<Output = Result<(EvmEnv, BlockId), Self::Error>> + Send
+    ) -> impl Future<Output = Result<(EvmEnvFor<Self::Evm>, BlockId), Self::Error>> + Send
     where
         Self: LoadPendingBlock + SpawnBlocking,
     {
         async move {
             if at.is_pending() {
-                let PendingBlockEnv { cfg, block_env, origin } =
-                    self.pending_block_env_and_cfg()?;
-                Ok(((cfg, block_env).into(), origin.state_block_id()))
+                let PendingBlockEnv { evm_env, origin } = self.pending_block_env_and_cfg()?;
+                Ok((evm_env, origin.state_block_id()))
             } else {
                 // Use cached values if there is no pending block
                 let block_hash = RpcNodeCore::provider(self)
@@ -231,7 +258,7 @@ pub trait LoadState:
 
                 let header =
                     self.cache().get_header(block_hash).await.map_err(Self::Error::from_eth_err)?;
-                let evm_env = self.evm_config().cfg_and_block_env(&header);
+                let evm_env = self.evm_config().evm_env(&header);
 
                 Ok((evm_env, block_hash.into()))
             }

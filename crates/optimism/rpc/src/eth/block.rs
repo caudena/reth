@@ -2,18 +2,18 @@
 
 use alloy_consensus::{transaction::TransactionMeta, BlockHeader};
 use alloy_rpc_types_eth::BlockId;
-use op_alloy_network::Network;
 use op_alloy_rpc_types::OpTransactionReceipt;
 use reth_chainspec::ChainSpecProvider;
 use reth_node_api::BlockBody;
 use reth_optimism_chainspec::OpChainSpec;
 use reth_optimism_primitives::{OpReceipt, OpTransactionSigned};
-use reth_primitives_traits::SignedTransaction;
-use reth_provider::{BlockReader, HeaderProvider};
 use reth_rpc_eth_api::{
     helpers::{EthBlocks, LoadBlock, LoadPendingBlock, LoadReceipt, SpawnBlocking},
+    types::RpcTypes,
     RpcReceipt,
 };
+use reth_storage_api::{BlockReader, HeaderProvider, ProviderTx};
+use reth_transaction_pool::{PoolTransaction, TransactionPool};
 
 use crate::{eth::OpNodeCore, OpEthApi, OpEthApiError, OpReceiptBuilder};
 
@@ -21,7 +21,7 @@ impl<N> EthBlocks for OpEthApi<N>
 where
     Self: LoadBlock<
         Error = OpEthApiError,
-        NetworkTypes: Network<ReceiptResponse = OpTransactionReceipt>,
+        NetworkTypes: RpcTypes<Receipt = OpTransactionReceipt>,
         Provider: BlockReader<Receipt = OpReceipt, Transaction = OpTransactionSigned>,
     >,
     N: OpNodeCore<Provider: ChainSpecProvider<ChainSpec = OpChainSpec> + HeaderProvider>,
@@ -40,8 +40,7 @@ where
             let excess_blob_gas = block.excess_blob_gas();
             let timestamp = block.timestamp();
 
-            let mut l1_block_info =
-                reth_optimism_evm::extract_l1_info(block.body()).map_err(OpEthApiError::from)?;
+            let mut l1_block_info = reth_optimism_evm::extract_l1_info(block.body())?;
 
             return block
                 .body()
@@ -51,7 +50,7 @@ where
                 .enumerate()
                 .map(|(idx, (tx, receipt))| -> Result<_, _> {
                     let meta = TransactionMeta {
-                        tx_hash: *tx.tx_hash(),
+                        tx_hash: tx.tx_hash(),
                         index: idx as u64,
                         block_hash,
                         block_number,
@@ -85,7 +84,11 @@ where
 
 impl<N> LoadBlock for OpEthApi<N>
 where
-    Self: LoadPendingBlock + SpawnBlocking,
+    Self: LoadPendingBlock<
+            Pool: TransactionPool<
+                Transaction: PoolTransaction<Consensus = ProviderTx<Self::Provider>>,
+            >,
+        > + SpawnBlocking,
     N: OpNodeCore,
 {
 }
