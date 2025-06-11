@@ -7,7 +7,7 @@ use crate::{
     DatabaseProviderFactory, FullProvider, HashedPostStateProvider, HeaderProvider, ProviderError,
     ProviderFactory, PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt,
     StageCheckpointReader, StateProviderBox, StateProviderFactory, StateReader,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WithdrawalsProvider,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
 };
 use alloy_consensus::{transaction::TransactionMeta, Header};
 use alloy_eips::{
@@ -36,8 +36,8 @@ use reth_primitives_traits::{
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::{StageCheckpoint, StageId};
 use reth_storage_api::{
-    BlockBodyIndicesProvider, DBProvider, NodePrimitivesProvider, OmmersProvider,
-    StateCommitmentProvider, StorageChangeSetReader,
+    BlockBodyIndicesProvider, DBProvider, NodePrimitivesProvider, StateCommitmentProvider,
+    StorageChangeSetReader,
 };
 use reth_storage_errors::provider::ProviderResult;
 use reth_trie::HashedPostState;
@@ -440,27 +440,18 @@ impl<N: ProviderNodeTypes> ReceiptProvider for BlockchainProvider<N> {
     ) -> ProviderResult<Vec<Self::Receipt>> {
         self.consistent_provider()?.receipts_by_tx_range(range)
     }
+
+    fn receipts_by_block_range(
+        &self,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<Vec<Vec<Self::Receipt>>> {
+        self.consistent_provider()?.receipts_by_block_range(block_range)
+    }
 }
 
 impl<N: ProviderNodeTypes> ReceiptProviderIdExt for BlockchainProvider<N> {
     fn receipts_by_block_id(&self, block: BlockId) -> ProviderResult<Option<Vec<Self::Receipt>>> {
         self.consistent_provider()?.receipts_by_block_id(block)
-    }
-}
-
-impl<N: ProviderNodeTypes> WithdrawalsProvider for BlockchainProvider<N> {
-    fn withdrawals_by_block(
-        &self,
-        id: BlockHashOrNumber,
-        timestamp: u64,
-    ) -> ProviderResult<Option<Withdrawals>> {
-        self.consistent_provider()?.withdrawals_by_block(id, timestamp)
-    }
-}
-
-impl<N: ProviderNodeTypes> OmmersProvider for BlockchainProvider<N> {
-    fn ommers(&self, id: BlockHashOrNumber) -> ProviderResult<Option<Vec<Self::Header>>> {
-        self.consistent_provider()?.ommers(id)
     }
 }
 
@@ -644,14 +635,6 @@ impl<N: ProviderNodeTypes> CanonChainTracker for BlockchainProvider<N> {
         self.canonical_in_memory_state.last_received_update_timestamp()
     }
 
-    fn on_transition_configuration_exchanged(&self) {
-        self.canonical_in_memory_state.on_transition_configuration_exchanged();
-    }
-
-    fn last_exchanged_transition_configuration_timestamp(&self) -> Option<Instant> {
-        self.canonical_in_memory_state.last_exchanged_transition_configuration_timestamp()
-    }
-
     fn set_canonical_head(&self, header: SealedHeader<Self::Header>) {
         self.canonical_in_memory_state.set_canonical_head(header);
     }
@@ -696,10 +679,6 @@ where
 
     fn header_by_id(&self, id: BlockId) -> ProviderResult<Option<Self::Header>> {
         self.consistent_provider()?.header_by_id(id)
-    }
-
-    fn ommers_by_id(&self, id: BlockId) -> ProviderResult<Option<Vec<Self::Header>>> {
-        self.consistent_provider()?.ommers_by_id(id)
     }
 }
 
@@ -780,13 +759,14 @@ mod tests {
         BlockWriter, CanonChainTracker, ProviderFactory, StaticFileProviderFactory,
         StaticFileWriter,
     };
-    use alloy_eips::{eip4895::Withdrawals, BlockHashOrNumber, BlockNumHash, BlockNumberOrTag};
+    use alloy_eips::{BlockHashOrNumber, BlockNumHash, BlockNumberOrTag};
     use alloy_primitives::{BlockNumber, TxNumber, B256};
     use itertools::Itertools;
     use rand::Rng;
     use reth_chain_state::{
         test_utils::TestBlockBuilder, CanonStateNotification, CanonStateSubscriptions,
-        CanonicalInMemoryState, ExecutedBlock, ExecutedBlockWithTrieUpdates, NewCanonicalChain,
+        CanonicalInMemoryState, ExecutedBlock, ExecutedBlockWithTrieUpdates, ExecutedTrieUpdates,
+        NewCanonicalChain,
     };
     use reth_chainspec::{
         ChainSpec, ChainSpecBuilder, ChainSpecProvider, EthereumHardfork, MAINNET,
@@ -800,13 +780,15 @@ mod tests {
     use reth_errors::ProviderError;
     use reth_ethereum_primitives::{Block, EthPrimitives, Receipt};
     use reth_execution_types::{Chain, ExecutionOutcome};
-    use reth_primitives_traits::{BlockBody, RecoveredBlock, SealedBlock, SignedTransaction};
+    use reth_primitives_traits::{
+        BlockBody, RecoveredBlock, SealedBlock, SignedTransaction, SignerRecoverable,
+    };
     use reth_static_file_types::StaticFileSegment;
     use reth_storage_api::{
         BlockBodyIndicesProvider, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader,
         BlockReaderIdExt, BlockSource, ChangeSetReader, DatabaseProviderFactory, HeaderProvider,
-        OmmersProvider, ReceiptProvider, ReceiptProviderIdExt, StateProviderFactory,
-        TransactionVariant, TransactionsProvider, WithdrawalsProvider,
+        ReceiptProvider, ReceiptProviderIdExt, StateProviderFactory, TransactionVariant,
+        TransactionsProvider,
     };
     use reth_testing_utils::generators::{
         self, random_block, random_block_range, random_changeset_range, random_eoa_accounts,
@@ -935,7 +917,7 @@ mod tests {
                         Arc::new(RecoveredBlock::new_sealed(block.clone(), senders)),
                         execution_outcome.into(),
                         Default::default(),
-                        Default::default(),
+                        ExecutedTrieUpdates::empty(),
                     )
                 })
                 .collect(),
@@ -1067,7 +1049,7 @@ mod tests {
                 )),
                 Default::default(),
                 Default::default(),
-                Default::default(),
+                ExecutedTrieUpdates::empty(),
             )],
         };
         provider.canonical_in_memory_state.update_chain(chain);
@@ -1105,7 +1087,7 @@ mod tests {
                 execution_output: Default::default(),
                 hashed_state: Default::default(),
             },
-            trie: Default::default(),
+            trie: ExecutedTrieUpdates::empty(),
         });
 
         // Now the last block should be found in memory
@@ -1163,7 +1145,7 @@ mod tests {
                 )),
                 Default::default(),
                 Default::default(),
-                Default::default(),
+                ExecutedTrieUpdates::empty(),
             )],
         };
         provider.canonical_in_memory_state.update_chain(chain);
@@ -1219,7 +1201,7 @@ mod tests {
                 execution_output: Default::default(),
                 hashed_state: Default::default(),
             },
-            trie: Default::default(),
+            trie: ExecutedTrieUpdates::empty(),
         });
 
         // Assertions related to the pending block
@@ -1231,43 +1213,6 @@ mod tests {
         );
 
         assert_eq!(provider.pending_block_and_receipts()?, Some((block, vec![])));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_block_reader_ommers() -> eyre::Result<()> {
-        // Create a new provider
-        let mut rng = generators::rng();
-        let (provider, _, in_memory_blocks, _) = provider_with_random_blocks(
-            &mut rng,
-            TEST_BLOCKS_COUNT,
-            TEST_BLOCKS_COUNT,
-            BlockRangeParams::default(),
-        )?;
-
-        let first_in_mem_block = in_memory_blocks.first().unwrap();
-
-        // If the block is after the Merge, we should have an empty ommers list
-        assert_eq!(
-            provider.ommers(
-                (provider.chain_spec().paris_block_and_final_difficulty.unwrap().0 + 2).into()
-            )?,
-            Some(vec![])
-        );
-
-        // First in memory block ommers should be found
-        assert_eq!(
-            provider.ommers(first_in_mem_block.number.into())?,
-            Some(first_in_mem_block.body().ommers.clone())
-        );
-        assert_eq!(
-            provider.ommers(first_in_mem_block.hash().into())?,
-            Some(first_in_mem_block.body().ommers.clone())
-        );
-
-        // A random hash should return None as the block number is not found
-        assert_eq!(provider.ommers(B256::random().into())?, None);
 
         Ok(())
     }
@@ -1299,7 +1244,7 @@ mod tests {
                 )),
                 Default::default(),
                 Default::default(),
-                Default::default(),
+                ExecutedTrieUpdates::empty(),
             )],
         };
         provider.canonical_in_memory_state.update_chain(chain);
@@ -1436,50 +1381,6 @@ mod tests {
         let (notification_1, notification_2) = tokio::join!(rx_1.recv(), rx_2.recv());
         assert_eq!(notification_1, Ok(re_org.clone()));
         assert_eq!(notification_2, Ok(re_org.clone()));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_withdrawals_provider() -> eyre::Result<()> {
-        let mut rng = generators::rng();
-        let chain_spec = Arc::new(ChainSpecBuilder::mainnet().shanghai_activated().build());
-        let (provider, database_blocks, in_memory_blocks, _) =
-            provider_with_chain_spec_and_random_blocks(
-                &mut rng,
-                chain_spec.clone(),
-                TEST_BLOCKS_COUNT,
-                TEST_BLOCKS_COUNT,
-                BlockRangeParams { withdrawals_count: Some(1..3), ..Default::default() },
-            )?;
-        let blocks = [database_blocks, in_memory_blocks].concat();
-
-        let shainghai_timestamp =
-            chain_spec.hardforks.fork(EthereumHardfork::Shanghai).as_timestamp().unwrap();
-
-        assert_eq!(
-            provider
-                .withdrawals_by_block(
-                    alloy_eips::BlockHashOrNumber::Number(15),
-                    shainghai_timestamp
-                )
-                .expect("could not call withdrawals by block"),
-            Some(Withdrawals::new(vec![])),
-            "Expected withdrawals_by_block to return empty list if block does not exist"
-        );
-
-        for block in blocks {
-            assert_eq!(
-                provider
-                    .withdrawals_by_block(
-                        alloy_eips::BlockHashOrNumber::Number(block.number),
-                        shainghai_timestamp
-                    )?
-                    .unwrap(),
-                block.body().withdrawals.clone().unwrap(),
-                "Expected withdrawals_by_block to return correct withdrawals"
-            );
-        }
 
         Ok(())
     }
@@ -1660,46 +1561,6 @@ mod tests {
     }
 
     #[test]
-    fn test_block_reader_id_ext_ommers_by_id() -> eyre::Result<()> {
-        let mut rng = generators::rng();
-        let (provider, database_blocks, in_memory_blocks, _) = provider_with_random_blocks(
-            &mut rng,
-            TEST_BLOCKS_COUNT,
-            TEST_BLOCKS_COUNT,
-            BlockRangeParams::default(),
-        )?;
-
-        let database_block = database_blocks.first().unwrap().clone();
-        let in_memory_block = in_memory_blocks.last().unwrap().clone();
-
-        let block_number = database_block.number;
-        let block_hash = database_block.hash();
-
-        assert_eq!(
-            provider.ommers_by_id(block_number.into()).unwrap().unwrap_or_default(),
-            database_block.body().ommers
-        );
-        assert_eq!(
-            provider.ommers_by_id(block_hash.into()).unwrap().unwrap_or_default(),
-            database_block.body().ommers
-        );
-
-        let block_number = in_memory_block.number;
-        let block_hash = in_memory_block.hash();
-
-        assert_eq!(
-            provider.ommers_by_id(block_number.into()).unwrap().unwrap_or_default(),
-            in_memory_block.body().ommers
-        );
-        assert_eq!(
-            provider.ommers_by_id(block_hash.into()).unwrap().unwrap_or_default(),
-            in_memory_block.body().ommers
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn test_receipt_provider_id_ext_receipts_by_block_id() -> eyre::Result<()> {
         let mut rng = generators::rng();
         let (provider, database_blocks, in_memory_blocks, receipts) = provider_with_random_blocks(
@@ -1873,7 +1734,7 @@ mod tests {
                             ..Default::default()
                         }),
                         Default::default(),
-                        Default::default(),
+                        ExecutedTrieUpdates::empty(),
                     )
                 })
                 .unwrap()],
@@ -2002,7 +1863,7 @@ mod tests {
                     execution_output: Default::default(),
                     hashed_state: Default::default(),
                 },
-                trie: Default::default(),
+                trie: ExecutedTrieUpdates::empty(),
             },
         );
 
@@ -2078,35 +1939,6 @@ mod tests {
     }
 
     #[test]
-    fn test_canon_state_tracker() -> eyre::Result<()> {
-        let mut rng = generators::rng();
-        let (provider, _, _, _) = provider_with_random_blocks(
-            &mut rng,
-            TEST_BLOCKS_COUNT,
-            TEST_BLOCKS_COUNT,
-            BlockRangeParams::default(),
-        )?;
-
-        let before = Instant::now();
-        provider.on_forkchoice_update_received(&Default::default());
-        let last_update_ts = provider.last_received_update_timestamp().unwrap();
-        let after = Instant::now();
-
-        // Ensure the timestamp is updated and between the before and after timestamps
-        assert!(before < last_update_ts && last_update_ts < after);
-
-        let before = Instant::now();
-        provider.on_transition_configuration_exchanged();
-        let last_update_ts = provider.last_exchanged_transition_configuration_timestamp().unwrap();
-        let after = Instant::now();
-
-        // Ensure the timestamp is updated and between the before and after timestamps
-        assert!(before < last_update_ts && last_update_ts < after);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_block_id_reader() -> eyre::Result<()> {
         // Create a new provider
         let mut rng = generators::rng();
@@ -2128,7 +1960,7 @@ mod tests {
                 execution_output: Default::default(),
                 hashed_state: Default::default(),
             },
-            trie: Default::default(),
+            trie: ExecutedTrieUpdates::empty(),
         });
 
         // Set the safe block in memory

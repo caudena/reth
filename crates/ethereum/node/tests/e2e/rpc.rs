@@ -35,7 +35,7 @@ async fn test_fee_history() -> eyre::Result<()> {
 
     let seed: [u8; 32] = rand::rng().random();
     let mut rng = StdRng::from_seed(seed);
-    println!("Seed: {:?}", seed);
+    println!("Seed: {seed:?}");
 
     let chain_spec = Arc::new(
         ChainSpecBuilder::default()
@@ -45,12 +45,18 @@ async fn test_fee_history() -> eyre::Result<()> {
             .build(),
     );
 
-    let (mut nodes, _tasks, wallet) =
-        setup_engine::<EthereumNode>(1, chain_spec.clone(), false, eth_payload_attributes).await?;
+    let (mut nodes, _tasks, wallet) = setup_engine::<EthereumNode>(
+        1,
+        chain_spec.clone(),
+        false,
+        Default::default(),
+        eth_payload_attributes,
+    )
+    .await?;
     let mut node = nodes.pop().unwrap();
     let provider = ProviderBuilder::new()
-        .wallet(EthereumWallet::new(wallet.gen().swap_remove(0)))
-        .on_http(node.rpc_url());
+        .wallet(EthereumWallet::new(wallet.wallet_gen().swap_remove(0)))
+        .connect_http(node.rpc_url());
 
     let fee_history = provider.get_fee_history(10, 0_u64.into(), &[]).await?;
 
@@ -127,12 +133,18 @@ async fn test_flashbots_validate_v3() -> eyre::Result<()> {
             .build(),
     );
 
-    let (mut nodes, _tasks, wallet) =
-        setup_engine::<EthereumNode>(1, chain_spec.clone(), false, eth_payload_attributes).await?;
+    let (mut nodes, _tasks, wallet) = setup_engine::<EthereumNode>(
+        1,
+        chain_spec.clone(),
+        false,
+        Default::default(),
+        eth_payload_attributes,
+    )
+    .await?;
     let mut node = nodes.pop().unwrap();
     let provider = ProviderBuilder::new()
-        .wallet(EthereumWallet::new(wallet.gen().swap_remove(0)))
-        .on_http(node.rpc_url());
+        .wallet(EthereumWallet::new(wallet.wallet_gen().swap_remove(0)))
+        .connect_http(node.rpc_url());
 
     node.advance(100, |_| {
         let provider = provider.clone();
@@ -203,12 +215,18 @@ async fn test_flashbots_validate_v4() -> eyre::Result<()> {
             .build(),
     );
 
-    let (mut nodes, _tasks, wallet) =
-        setup_engine::<EthereumNode>(1, chain_spec.clone(), false, eth_payload_attributes).await?;
+    let (mut nodes, _tasks, wallet) = setup_engine::<EthereumNode>(
+        1,
+        chain_spec.clone(),
+        false,
+        Default::default(),
+        eth_payload_attributes,
+    )
+    .await?;
     let mut node = nodes.pop().unwrap();
     let provider = ProviderBuilder::new()
-        .wallet(EthereumWallet::new(wallet.gen().swap_remove(0)))
-        .on_http(node.rpc_url());
+        .wallet(EthereumWallet::new(wallet.wallet_gen().swap_remove(0)))
+        .connect_http(node.rpc_url());
 
     node.advance(100, |_| {
         let provider = provider.clone();

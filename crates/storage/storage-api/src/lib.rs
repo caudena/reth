@@ -57,12 +57,6 @@ pub use trie::*;
 mod chain_info;
 pub use chain_info::*;
 
-mod withdrawals;
-pub use withdrawals::*;
-
-mod ommers;
-pub use ommers::*;
-
 #[cfg(feature = "db-api")]
 mod database_provider;
 #[cfg(feature = "db-api")]
@@ -93,3 +87,15 @@ pub use primitives::*;
 
 mod block_indices;
 pub use block_indices::*;
+
+mod block_writer;
+pub use block_writer::*;
+
+mod state_writer;
+pub use state_writer::*;
+
+mod header_sync_gap;
+pub use header_sync_gap::HeaderSyncGapProvider;
+
+mod full;
+pub use full::*;
