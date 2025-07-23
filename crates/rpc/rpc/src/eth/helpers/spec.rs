@@ -1,39 +1,33 @@
 use alloy_primitives::U256;
-use reth_chainspec::{ChainSpecProvider, EthereumHardforks};
-use reth_network_api::NetworkInfo;
-use reth_rpc_eth_api::{helpers::EthApiSpec, RpcNodeCore};
-use reth_storage_api::{BlockNumReader, BlockReader, ProviderTx, StageCheckpointReader};
-
-use crate::EthApi;
+use reth_rpc_convert::RpcConvert;
+use reth_rpc_eth_api::{
+    helpers::{spec::SignersForApi, EthApiSpec},
+    RpcNodeCore,
+};
+use reth_storage_api::ProviderTx;
 
 //Custom imports
 use crate::trace::reward_trace;
-use alloy_rpc_types_trace::parity::{LocalizedTransactionTrace, RewardAction, RewardType};
-use reth_chainspec::{EthChainSpec, EthereumHardfork, SEPOLIA};
+use crate::EthApi;
 use alloy_evm::block::calc::{base_block_reward_pre_merge, block_reward, ommer_reward};
+use alloy_rpc_types_trace::parity::{LocalizedTransactionTrace, RewardAction, RewardType};
+use reth_chainspec::{ChainSpecProvider, EthChainSpec, EthereumHardfork, SEPOLIA};
 use reth_primitives_traits::BlockHeader;
 use reth_rpc_eth_types::EthApiError;
 
-impl<Provider, Pool, Network, EvmConfig> EthApiSpec for EthApi<Provider, Pool, Network, EvmConfig>
+impl<N, Rpc> EthApiSpec for EthApi<N, Rpc>
 where
-    Self: RpcNodeCore<
-        Provider: ChainSpecProvider<ChainSpec: EthereumHardforks>
-                      + BlockNumReader
-                      + StageCheckpointReader,
-        Network: NetworkInfo,
-    >,
-    Provider: BlockReader,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives=N::Primitives>,
 {
-    type Transaction = ProviderTx<Provider>;
+    type Transaction = ProviderTx<N::Provider>;
+    type Rpc = Rpc::Network;
 
     fn starting_block(&self) -> U256 {
         self.inner.starting_block()
     }
 
-    fn signers(
-        &self,
-    ) -> &parking_lot::RwLock<Vec<Box<dyn reth_rpc_eth_api::helpers::EthSigner<Self::Transaction>>>>
-    {
+    fn signers(&self) -> &SignersForApi<Self> {
         self.inner.signers()
     }
 

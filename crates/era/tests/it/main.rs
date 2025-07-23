@@ -49,7 +49,7 @@ const ERA1_MAINNET_FILES_NAMES: [&str; 6] = [
 /// Sepolia network name
 const SEPOLIA: &str = "sepolia";
 
-/// Default sepolia mainnet url
+/// Default sepolia url
 /// for downloading sepolia `.era1` files
 const SEPOLIA_URL: &str = "https://era.ithaca.xyz/sepolia-era1/";
 
@@ -115,7 +115,7 @@ impl Era1TestDownloader {
 
         let final_url = Url::from_str(url).map_err(|e| eyre!("Failed to parse URL: {}", e))?;
 
-        let folder = self.temp_dir.path().to_owned().into_boxed_path();
+        let folder = self.temp_dir.path();
 
         // set up the client
         let client = EraClient::new(Client::new(), final_url, folder);

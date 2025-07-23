@@ -418,13 +418,30 @@ where
         let changed_senders = self.changed_senders(accounts.into_iter());
         let UpdateOutcome { promoted, discarded } =
             self.pool.write().update_accounts(changed_senders);
-        let mut listener = self.event_listener.write();
 
-        for tx in &promoted {
-            listener.pending(tx.hash(), None);
+        // Notify about promoted pending transactions (similar to notify_on_new_state)
+        if !promoted.is_empty() {
+            self.pending_transaction_listener.lock().retain_mut(|listener| {
+                let promoted_hashes = promoted.iter().filter_map(|tx| {
+                    if listener.kind.is_propagate_only() && !tx.propagate {
+                        None
+                    } else {
+                        Some(*tx.hash())
+                    }
+                });
+                listener.send_all(promoted_hashes)
+            });
         }
-        for tx in &discarded {
-            listener.discarded(tx.hash());
+
+        {
+            let mut listener = self.event_listener.write();
+
+            for tx in &promoted {
+                listener.pending(tx.hash(), None);
+            }
+            for tx in &discarded {
+                listener.discarded(tx.hash());
+            }
         }
 
         // This deletes outdated blob txs from the blob store, based on the account's nonce. This is
@@ -902,7 +919,7 @@ where
             .collect()
     }
 
-    /// Returns all pending transactions filted by [`TransactionOrigin`]
+    /// Returns all pending transactions filtered by [`TransactionOrigin`]
     pub fn get_pending_transactions_by_origin(
         &self,
         origin: TransactionOrigin,
@@ -1213,11 +1230,13 @@ impl<T: PoolTransaction> OnNewCanonicalStateOutcome<T> {
 mod tests {
     use crate::{
         blobstore::{BlobStore, InMemoryBlobStore},
+        identifier::SenderId,
         test_utils::{MockTransaction, TestPoolBuilder},
         validate::ValidTransaction,
         BlockInfo, PoolConfig, SubPoolLimit, TransactionOrigin, TransactionValidationOutcome, U256,
     };
     use alloy_eips::{eip4844::BlobTransactionSidecar, eip7594::BlobTransactionSidecarVariant};
+    use alloy_primitives::Address;
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -1303,5 +1322,29 @@ mod tests {
 
         // Assert that the pool's blob store matches the expected blob store.
         assert_eq!(*test_pool.blob_store(), blob_store);
+    }
+
+    #[test]
+    fn test_auths_stored_in_identifiers() {
+        // Create a test pool with default configuration.
+        let test_pool = &TestPoolBuilder::default().with_config(Default::default()).pool;
+
+        let auth = Address::new([1; 20]);
+        let tx = MockTransaction::eip7702();
+
+        test_pool.add_transactions(
+            TransactionOrigin::Local,
+            [TransactionValidationOutcome::Valid {
+                balance: U256::from(1_000),
+                state_nonce: 0,
+                bytecode_hash: None,
+                transaction: ValidTransaction::Valid(tx),
+                propagate: true,
+                authorities: Some(vec![auth]),
+            }],
+        );
+
+        let identifiers = test_pool.identifiers.read();
+        assert_eq!(identifiers.sender_id(&auth), Some(SenderId::from(1)));
     }
 }

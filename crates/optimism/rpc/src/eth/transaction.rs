@@ -1,34 +1,26 @@
 //! Loads and formats OP transaction RPC response.
 
-use alloy_consensus::{transaction::Recovered, SignableTransaction};
-use alloy_primitives::{Bytes, Signature, B256};
+use crate::{OpEthApi, OpEthApiError, SequencerClient};
+use alloy_primitives::{Bytes, B256};
 use alloy_rpc_types_eth::TransactionInfo;
-use op_alloy_consensus::{
-    transaction::{OpDepositInfo, OpTransactionInfo},
-    OpTxEnvelope,
-};
-use op_alloy_rpc_types::{OpTransactionRequest, Transaction};
-use reth_node_api::{FullNodeComponents, FullNodeTypes, NodeTypes};
+use op_alloy_consensus::{transaction::OpTransactionInfo, OpTransaction};
 use reth_optimism_primitives::DepositReceipt;
-use reth_primitives_traits::{NodePrimitives, TxTy};
+use reth_primitives_traits::SignedTransaction;
 use reth_rpc_eth_api::{
-    helpers::{EthSigner, EthTransactions, LoadTransaction, SpawnBlocking},
-    EthApiTypes, FromEthApiError, FullEthApiTypes, RpcNodeCore, RpcNodeCoreExt, TransactionCompat,
+    helpers::{spec::SignersForRpc, EthTransactions, LoadTransaction},
+    try_into_op_tx_info, FromEthApiError, RpcConvert, RpcNodeCore, TxInfoMapper,
 };
-use reth_rpc_eth_types::{utils::recover_raw_transaction, EthApiError};
-use reth_storage_api::{
-    BlockReader, BlockReaderIdExt, ProviderTx, ReceiptProvider, TransactionsProvider,
-};
+use reth_rpc_eth_types::utils::recover_raw_transaction;
+use reth_storage_api::{errors::ProviderError, ReceiptProvider};
 use reth_transaction_pool::{PoolTransaction, TransactionOrigin, TransactionPool};
+use std::fmt::{Debug, Formatter};
 
-use crate::{eth::OpNodeCore, OpEthApi, OpEthApiError, SequencerClient};
-
-impl<N> EthTransactions for OpEthApi<N>
+impl<N, Rpc> EthTransactions for OpEthApi<N, Rpc>
 where
-    Self: LoadTransaction<Provider: BlockReaderIdExt> + EthApiTypes<Error = OpEthApiError>,
-    N: OpNodeCore<Provider: BlockReader<Transaction = ProviderTx<Self::Provider>>>,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = OpEthApiError>,
 {
-    fn signers(&self) -> &parking_lot::RwLock<Vec<Box<dyn EthSigner<ProviderTx<Self::Provider>>>>> {
+    fn signers(&self) -> &SignersForRpc<Self::Provider, Self::NetworkTypes> {
         self.inner.eth_api.signers()
     }
 
@@ -37,6 +29,10 @@ where
     /// Returns the hash of the transaction.
     async fn send_raw_transaction(&self, tx: Bytes) -> Result<B256, Self::Error> {
         let recovered = recover_raw_transaction(&tx)?;
+
+        // broadcast raw transaction to subscribers if there is any.
+        self.eth_api().broadcast_raw_transaction(tx.clone());
+
         let pool_transaction = <Self::Pool as TransactionPool>::Transaction::from_pooled(recovered);
 
         // On optimism, transactions are forwarded directly to the sequencer to be included in
@@ -69,17 +65,17 @@ where
     }
 }
 
-impl<N> LoadTransaction for OpEthApi<N>
+impl<N, Rpc> LoadTransaction for OpEthApi<N, Rpc>
 where
-    Self: SpawnBlocking + FullEthApiTypes + RpcNodeCoreExt,
-    N: OpNodeCore<Provider: TransactionsProvider, Pool: TransactionPool>,
-    Self::Pool: TransactionPool,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = OpEthApiError>,
 {
 }
 
-impl<N> OpEthApi<N>
+impl<N, Rpc> OpEthApi<N, Rpc>
 where
-    N: OpNodeCore,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives>,
 {
     /// Returns the [`SequencerClient`] if one is set.
     pub fn raw_tx_forwarder(&self) -> Option<SequencerClient> {
@@ -87,59 +83,42 @@ where
     }
 }
 
-impl<N> TransactionCompat for OpEthApi<N>
-where
-    N: FullNodeComponents,
-    N::Provider: ReceiptProvider<Receipt: DepositReceipt>,
-    <<N as FullNodeTypes>::Types as NodeTypes>::Primitives: NodePrimitives<SignedTx = OpTxEnvelope>,
-{
-    type Primitives = <<N as FullNodeTypes>::Types as NodeTypes>::Primitives;
-    type Transaction = Transaction;
-    type Error = OpEthApiError;
+/// Optimism implementation of [`TxInfoMapper`].
+///
+/// For deposits, receipt is fetched to extract `deposit_nonce` and `deposit_receipt_version`.
+/// Otherwise, it works like regular Ethereum implementation, i.e. uses [`TransactionInfo`].
+pub struct OpTxInfoMapper<Provider> {
+    provider: Provider,
+}
 
-    fn fill(
-        &self,
-        tx: Recovered<TxTy<Self::Primitives>>,
-        tx_info: TransactionInfo,
-    ) -> Result<Self::Transaction, Self::Error> {
-        let tx = tx.convert::<TxTy<Self::Primitives>>();
-        let mut deposit_receipt_version = None;
-        let mut deposit_nonce = None;
-
-        if tx.is_deposit() {
-            // for depost tx we need to fetch the receipt
-            self.inner
-                .eth_api
-                .provider()
-                .receipt_by_hash(tx.tx_hash())
-                .map_err(Self::Error::from_eth_err)?
-                .inspect(|receipt| {
-                    if let Some(receipt) = receipt.as_deposit_receipt() {
-                        deposit_receipt_version = receipt.deposit_receipt_version;
-                        deposit_nonce = receipt.deposit_nonce;
-                    }
-                });
-        }
-
-        let tx_info = OpTransactionInfo::new(
-            tx_info,
-            OpDepositInfo { deposit_nonce, deposit_receipt_version },
-        );
-
-        Ok(Transaction::from_transaction(tx, tx_info))
+impl<Provider: Clone> Clone for OpTxInfoMapper<Provider> {
+    fn clone(&self) -> Self {
+        Self { provider: self.provider.clone() }
     }
+}
 
-    fn build_simulate_v1_transaction(
-        &self,
-        request: alloy_rpc_types_eth::TransactionRequest,
-    ) -> Result<TxTy<Self::Primitives>, Self::Error> {
-        let request: OpTransactionRequest = request.into();
-        let Ok(tx) = request.build_typed_tx() else {
-            return Err(OpEthApiError::Eth(EthApiError::TransactionConversionError))
-        };
+impl<Provider> Debug for OpTxInfoMapper<Provider> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpTxInfoMapper").finish()
+    }
+}
 
-        // Create an empty signature for the transaction.
-        let signature = Signature::new(Default::default(), Default::default(), false);
-        Ok(tx.into_signed(signature).into())
+impl<Provider> OpTxInfoMapper<Provider> {
+    /// Creates [`OpTxInfoMapper`] that uses [`ReceiptProvider`] borrowed from given `eth_api`.
+    pub const fn new(provider: Provider) -> Self {
+        Self { provider }
+    }
+}
+
+impl<T, Provider> TxInfoMapper<&T> for OpTxInfoMapper<Provider>
+where
+    T: OpTransaction + SignedTransaction,
+    Provider: ReceiptProvider<Receipt: DepositReceipt>,
+{
+    type Out = OpTransactionInfo;
+    type Err = ProviderError;
+
+    fn try_map(&self, tx: &T, tx_info: TransactionInfo) -> Result<Self::Out, ProviderError> {
+        try_into_op_tx_info(&self.provider, tx, tx_info)
     }
 }

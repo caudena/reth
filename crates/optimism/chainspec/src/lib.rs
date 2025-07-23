@@ -34,6 +34,7 @@ extern crate alloc;
 
 mod base;
 mod base_sepolia;
+mod basefee;
 
 pub mod constants;
 mod dev;
@@ -45,19 +46,23 @@ mod superchain;
 #[cfg(feature = "superchain-configs")]
 pub use superchain::*;
 
+pub use base::BASE_MAINNET;
+pub use base_sepolia::BASE_SEPOLIA;
+pub use basefee::*;
 pub use dev::OP_DEV;
 pub use op::OP_MAINNET;
 pub use op_sepolia::OP_SEPOLIA;
 
+/// Re-export for convenience
+pub use reth_optimism_forks::*;
+
 use alloc::{boxed::Box, vec, vec::Vec};
 use alloy_chains::Chain;
-use alloy_consensus::{proofs::storage_root_unhashed, Header};
+use alloy_consensus::{proofs::storage_root_unhashed, BlockHeader, Header};
 use alloy_eips::eip7840::BlobParams;
 use alloy_genesis::Genesis;
 use alloy_hardforks::Hardfork;
 use alloy_primitives::{B256, U256};
-pub use base::BASE_MAINNET;
-pub use base_sepolia::BASE_SEPOLIA;
 use derive_more::{Constructor, Deref, From, Into};
 use reth_chainspec::{
     BaseFeeParams, BaseFeeParamsKind, ChainSpec, ChainSpecBuilder, DepositContract,
@@ -65,7 +70,6 @@ use reth_chainspec::{
 };
 use reth_ethereum_forks::{ChainHardforks, EthereumHardfork, ForkCondition};
 use reth_network_peers::NodeRecord;
-use reth_optimism_forks::{OpHardfork, OpHardforks, OP_MAINNET_HARDFORKS};
 use reth_optimism_primitives::ADDRESS_L2_TO_L1_MESSAGE_PASSER;
 use reth_primitives_traits::{sync::LazyLock, SealedHeader};
 
@@ -283,6 +287,14 @@ impl EthChainSpec for OpChainSpec {
 
     fn final_paris_total_difficulty(&self) -> Option<U256> {
         self.inner.final_paris_total_difficulty()
+    }
+
+    fn next_block_base_fee(&self, parent: &Header, target_timestamp: u64) -> Option<u64> {
+        if self.is_holocene_active_at_timestamp(parent.timestamp()) {
+            decode_holocene_base_fee(self, parent, target_timestamp).ok()
+        } else {
+            self.inner.next_block_base_fee(parent, target_timestamp)
+        }
     }
 }
 
@@ -734,9 +746,7 @@ mod tests {
             genesis.hash_slow(),
             b256!("0xf712aa9241cc24369b143cf6dce85f0902a9731e70d66818a3a5845b296c73dd")
         );
-        let base_fee = genesis
-            .next_block_base_fee(BASE_MAINNET.base_fee_params_at_timestamp(genesis.timestamp))
-            .unwrap();
+        let base_fee = BASE_MAINNET.next_block_base_fee(genesis, genesis.timestamp).unwrap();
         // <https://base.blockscout.com/block/1>
         assert_eq!(base_fee, 980000000);
     }
@@ -748,9 +758,7 @@ mod tests {
             genesis.hash_slow(),
             b256!("0x0dcc9e089e30b90ddfc55be9a37dd15bc551aeee999d2e2b51414c54eaf934e4")
         );
-        let base_fee = genesis
-            .next_block_base_fee(BASE_SEPOLIA.base_fee_params_at_timestamp(genesis.timestamp))
-            .unwrap();
+        let base_fee = BASE_SEPOLIA.next_block_base_fee(genesis, genesis.timestamp).unwrap();
         // <https://base-sepolia.blockscout.com/block/1>
         assert_eq!(base_fee, 980000000);
     }
@@ -762,9 +770,7 @@ mod tests {
             genesis.hash_slow(),
             b256!("0x102de6ffb001480cc9b8b548fd05c34cd4f46ae4aa91759393db90ea0409887d")
         );
-        let base_fee = genesis
-            .next_block_base_fee(OP_SEPOLIA.base_fee_params_at_timestamp(genesis.timestamp))
-            .unwrap();
+        let base_fee = OP_SEPOLIA.next_block_base_fee(genesis, genesis.timestamp).unwrap();
         // <https://optimism-sepolia.blockscout.com/block/1>
         assert_eq!(base_fee, 980000000);
     }

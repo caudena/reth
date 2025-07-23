@@ -1,7 +1,6 @@
 //! Identifier types for transactions and senders.
-use alloy_primitives::Address;
+use alloy_primitives::{map::HashMap, Address};
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
 
 /// An internal mapping of addresses.
 ///
@@ -43,7 +42,7 @@ impl SenderIdentifiers {
         &mut self,
         addrs: impl IntoIterator<Item = Address>,
     ) -> Vec<SenderId> {
-        addrs.into_iter().filter_map(|addr| self.sender_id(&addr)).collect()
+        addrs.into_iter().map(|addr| self.sender_id_or_create(addr)).collect()
     }
 
     /// Returns the current identifier and increments the counter.
