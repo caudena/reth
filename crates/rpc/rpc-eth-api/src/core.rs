@@ -25,7 +25,7 @@ use futures::join;
 
 
 use alloy_primitives::map::HashSet;
-use alloy_rpc_types_trace::parity::{LocalizedTransactionTrace, TraceResultsWithTransactionHash, TraceType};
+use alloy_rpc_types_trace::parity::{TraceResultsWithTransactionHash, TraceType};
 
 use alloy_rpc_types::Block;
 //use alloy_rpc_types::Withdrawals;
@@ -44,8 +44,7 @@ use alloy_network::{ReceiptResponse, TransactionResponse};
 use reth_node_api::BlockBody;
 
 use alloy_primitives::Signature as Alloy_Signature;
-use alloy_rpc_types_trace::geth::TraceResult;
-use revm_inspectors::tracing::{parity::populate_state_diff, TracingInspectorConfig};
+use revm_inspectors::tracing::TracingInspectorConfig;
 use revm_primitives::{hex, FixedBytes};
 
 use jsonrpsee_types::ErrorObjectOwned;
@@ -504,21 +503,27 @@ where
             let self_clone = self.clone();
 
             async move {
-                let number = number.as_number().unwrap();
-                let mut trace_types: HashSet<TraceType> = Default::default();
+                let mut trace_types: HashSet<TraceType> = HashSet::default();
                 trace_types.insert(TraceType::Trace);
+
+                let block_id = BlockId::Number(number);
 
                 self_clone
                     .trace_block_with(
-                        number.into(),
+                        block_id,
                         None,
-                        TracingInspectorConfig::default_parity(),
-                        |tx_info, mut ctx| {
-                            let traces = ctx
+                        TracingInspectorConfig::from_parity_config(&trace_types),
+                        move |tx_info, mut ctx| {
+                            let full_trace = ctx
                                 .take_inspector()
                                 .into_parity_builder()
-                                .into_localized_transaction_traces(tx_info);
-                            Ok(traces)
+                                .into_trace_results(&ctx.result, &trace_types);
+
+                            let trace = TraceResultsWithTransactionHash {
+                                transaction_hash: tx_info.hash.expect("tx hash is set"),
+                                full_trace,
+                            };
+                            Ok(trace)
                         },
                     )
                     .await
@@ -653,35 +658,13 @@ where
             let trace_iter = trx_traces.into_iter();
 
             for ((trx, receipt), trace) in trx_iter.zip(receipts_iter).zip(trace_iter) {
-                if trx.tx_hash() != receipt.transaction_hash()
-                {
+                if trx.tx_hash() != receipt.transaction_hash() || trx.tx_hash() != trace.transaction_hash {
                     let trx_trace_hash_error = ErrorObjectOwned::owned(
                         2,
                         format!("Mismatch between transaction hash and corresponding receipt hash {}", trx.tx_hash()),
                         None::<()>,
                     );
                     return Err(trx_trace_hash_error);
-                }
-
-                for localized_trace in trace.iter() {
-                    if let Some(trace_hash) = localized_trace.transaction_hash {
-                        if trace_hash != trx.tx_hash() {
-                            let trx_trace_hash_error = ErrorObjectOwned::owned(
-                                2,
-                                format!("Mismatch between transaction hash and corresponding trace hash {}", trx.tx_hash()),
-                                None::<()>,
-                            );
-                            return Err(trx_trace_hash_error);
-                        }
-                    } else {
-                        let trx_trace_hash_missing_error =
-                            ErrorObjectOwned::owned(
-                                2,
-                                format!("Missing transaction hash in trace for transaction {}", trx.tx_hash()),
-                                None::<()>,
-                            );
-                        return Err(trx_trace_hash_missing_error);
-                    }
                 }
 
                 let json_trx = serde_json::to_string(&trx).unwrap();
@@ -830,12 +813,7 @@ where
                     }
                         .to_string(),
                     receipts: alloy_receipt,
-                    trace: alloy_rpc_types_trace::parity::TraceResults {
-                        output: Bytes::default(),
-                        state_diff: None,
-                        trace: trace.into_iter().map(|localized_trace| localized_trace.trace).collect(),
-                        vm_trace: None,
-                    }
+                    trace: trace.full_trace,
                 });
             }
         }
