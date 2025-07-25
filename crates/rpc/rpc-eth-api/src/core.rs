@@ -53,6 +53,7 @@ use crate::helpers::data::{EnrichedBlock, EnrichedTransaction};
 
 #[cfg(not(feature = "optimism"))]
 use alloy_rpc_types_trace::parity::LocalizedTransactionTrace;
+//use revm_inspectors::tracing::parity::populate_state_diff;
 //Custom imports
 
 /// Helper trait, unifies functionality that must be supported to implement all RPC methods for
@@ -518,6 +519,20 @@ where
                                 .take_inspector()
                                 .into_parity_builder()
                                 .into_trace_results(&ctx.result, &trace_types);
+
+                            // if let Some(ref mut state_diff) = full_trace.state_diff {
+                            //     populate_state_diff(state_diff, &ctx.db, ctx.state.iter())
+                            //         .map_err(|trace_res_err| {
+                            //             ErrorObjectOwned::owned(
+                            //                 1,
+                            //                 format!(
+                            //                     "Error getting block traces result {} for block{}",
+                            //                     trace_res_err, number
+                            //                 ),
+                            //                 None::<()>,
+                            //             )
+                            //         })?;
+                            // }
 
                             let trace = TraceResultsWithTransactionHash {
                                 transaction_hash: tx_info.hash.expect("tx hash is set"),
