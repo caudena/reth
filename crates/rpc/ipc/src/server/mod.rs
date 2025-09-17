@@ -1,6 +1,11 @@
 //! JSON-RPC IPC server implementation
 
 use crate::server::connection::{IpcConn, JsonRpcStream};
+// re-export so can be used during builder setup
+use crate::{
+    server::{connection::IpcConnDriver, rpc_service::RpcServiceCfg},
+    stream_codec::StreamCodec,
+};
 use futures::StreamExt;
 use futures_util::future::Either;
 use interprocess::local_socket::{
@@ -23,20 +28,15 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use tokio::sync::mpsc;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     sync::oneshot,
 };
-use tower::{layer::util::Identity, Layer, Service};
-use tracing::{debug, instrument, trace, warn, Instrument};
-// re-export so can be used during builder setup
-use crate::{
-    server::{connection::IpcConnDriver, rpc_service::RpcServiceCfg},
-    stream_codec::StreamCodec,
-};
-use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tower::layer::{util::Stack, LayerFn};
+use tower::{layer::util::Identity, Layer, Service};
+use tracing::{debug, instrument, trace, warn, Instrument};
 
 mod connection;
 mod ipc;
@@ -558,7 +558,7 @@ impl Default for Settings {
             max_request_body_size: TEN_MB_SIZE_BYTES,
             max_response_body_size: TEN_MB_SIZE_BYTES,
             max_log_length: 4096,
-            max_connections: 100,
+            max_connections: 1024,
             max_subscriptions_per_connection: 1024,
             message_buffer_capacity: 1024,
             tokio_runtime: None,
