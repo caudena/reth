@@ -1,7 +1,7 @@
 use crate::{
     sequence::FlashBlockPendingSequence,
     worker::{BuildArgs, FlashBlockBuilder},
-    ExecutionPayloadBaseV1, FlashBlock,
+    ExecutionPayloadBaseV1, FlashBlock, FlashBlockCompleteSequenceRx,
 };
 use alloy_eips::eip2718::WithEncoded;
 use alloy_primitives::B256;
@@ -78,6 +78,11 @@ where
             job: None,
             cached_state: None,
         }
+    }
+
+    /// Returns a subscriber to the flashblock sequence.
+    pub fn subscribe_block_sequence(&self) -> FlashBlockCompleteSequenceRx {
+        self.blocks.subscribe_block_sequence()
     }
 
     /// Drives the services and sends new blocks to the receiver
