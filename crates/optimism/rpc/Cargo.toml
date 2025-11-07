@@ -37,6 +37,8 @@ reth-optimism-txpool.workspace = true
 # TODO remove node-builder import
 reth-optimism-primitives = { workspace = true, features = ["reth-codec", "serde-bincode-compat", "serde"] }
 reth-optimism-forks.workspace = true
+alloy-rpc-types-trace.workspace = true
+
 
 # ethereum
 alloy-eips.workspace = true

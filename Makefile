@@ -99,7 +99,7 @@ build-debug: ## Build the reth binary into `target/debug` directory.
 
 .PHONY: build-op
 build-op: ## Build the op-reth binary into `target` directory.
-	cargo build --bin op-reth --features "$(FEATURES)" --profile "$(PROFILE)" --manifest-path crates/optimism/bin/Cargo.toml
+	cargo build --bin op-reth --features "$(FEATURES) optimism" --profile "$(PROFILE)" --manifest-path crates/optimism/bin/Cargo.toml
 
 # Builds the reth binary natively.
 build-native-%:

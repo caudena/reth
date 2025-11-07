@@ -28,6 +28,9 @@ pub mod state;
 pub mod trace;
 pub mod transaction;
 
+/// Module for handling RPC response.
+pub mod data;
+
 pub use block::{EthBlocks, LoadBlock};
 pub use blocking_task::SpawnBlocking;
 pub use call::{Call, EthCall};

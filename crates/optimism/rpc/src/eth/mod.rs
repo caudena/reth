@@ -50,6 +50,11 @@ use std::{
 use tokio::{sync::watch, time};
 use tracing::info;
 
+//custom imports
+use alloy_rpc_types_trace::parity::LocalizedTransactionTrace;
+use reth_rpc_eth_types::EthApiError;
+//custom imports
+
 /// Maximum duration to wait for a fresh flashblock when one is being built.
 const MAX_FLASHBLOCK_WAIT_DURATION: Duration = Duration::from_millis(50);
 
@@ -248,6 +253,24 @@ where
     #[inline]
     fn starting_block(&self) -> U256 {
         self.inner.eth_api.starting_block()
+    }
+
+    ///Calculate block rewards
+    fn calculate_base_block_reward<H: BlockHeader>(
+        &self,
+        _header: &H,
+    ) -> Result<Option<u128>, EthApiError> {
+        Ok(None)
+    }
+
+    ///Extract block rewards
+    fn extract_reward_traces<H: BlockHeader>(
+        &self,
+        _header: &H,
+        _ommers: Option<&[H]>,
+        _base_block_reward: u128,
+    ) -> Vec<LocalizedTransactionTrace> {
+        Vec::new()
     }
 }
 
