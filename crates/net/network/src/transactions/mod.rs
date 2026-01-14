@@ -75,9 +75,10 @@ use std::{
     task::{Context, Poll},
     time::{Duration, Instant},
 };
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot, oneshot::error::RecvError};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 /// The future for importing transactions into the pool.
 ///
@@ -296,6 +297,8 @@ pub struct TransactionsManager<
     ///
     /// From which we get all new incoming transaction related messages.
     network_events: EventStream<NetworkEvent<PeerRequest<N>>>,
+    ///Tx sender
+    trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
     /// Transaction fetcher to handle inflight and missing transaction requests.
     transaction_fetcher: TransactionFetcher<N>,
     /// All currently pending transactions grouped by peers.
@@ -380,6 +383,20 @@ impl<Pool: TransactionPool, N: NetworkPrimitives>
 impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
     TransactionsManager<Pool, N, PBundle>
 {
+    ///Trx Manager with sender
+    pub fn new_with_sender_policy(
+        network: NetworkHandle<N>,
+        pool: Pool,
+        from_network: mpsc::UnboundedReceiver<NetworkTransactionEvent<N>>,
+        transactions_manager_config: TransactionsManagerConfig,
+        policies: PBundle,
+        trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
+    ) -> Self {
+        let mut manager = Self::with_policy(network, pool, from_network, transactions_manager_config, policies);
+        manager.trx_events = trx_events;
+        manager
+    }
+
     /// Sets up a new instance with given the settings.
     ///
     /// Note: This expects an existing [`NetworkManager`](crate::NetworkManager) instance.
@@ -411,6 +428,7 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
             pool,
             network,
             network_events,
+            trx_events: None,
             transaction_fetcher,
             transactions_by_peers: Default::default(),
             pool_imports: Default::default(),
@@ -582,6 +600,16 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         peer_id: PeerId,
         msg: NewPooledTransactionHashes,
     ) {
+        let send_status = self.trx_events.as_ref().unwrap().send(
+            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() });
+
+        match send_status {
+            Ok(_) => {},
+            Err(err) => {
+                error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
+            }
+        }
+
         // If the node is initially syncing, ignore transactions
         if self.network.is_initially_syncing() {
             return
@@ -1286,6 +1314,17 @@ where
     fn on_network_tx_event(&mut self, event: NetworkTransactionEvent<N>) {
         match event {
             NetworkTransactionEvent::IncomingTransactions { peer_id, msg } => {
+                let msg_clone = msg.clone();
+
+                let send_status = self.trx_events.as_ref().unwrap().send(
+                    NetworkTransactionEvent::IncomingTransactions { peer_id, msg: msg_clone });
+                match send_status {
+                    Ok(_) => {},
+                    Err(err) => {
+                        error!("Failed to send IncomingPooledTransactionHashes to trx_events: {:?}", err);
+                    }
+                }
+
                 // ensure we didn't receive any blob transactions as these are disallowed to be
                 // broadcasted in full
 

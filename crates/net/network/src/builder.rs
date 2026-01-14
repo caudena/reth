@@ -2,6 +2,8 @@
 
 use std::fmt::Debug;
 
+use crate::transactions::NetworkTransactionEvent;
+
 use crate::{
     eth_requests::EthRequestHandler,
     transactions::{
@@ -15,6 +17,7 @@ use reth_eth_wire::{EthNetworkPrimitives, NetworkPrimitives};
 use reth_network_api::test_utils::PeersHandleProvider;
 use reth_transaction_pool::TransactionPool;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// We set the max channel capacity of the `EthRequestHandler` to 256
 /// 256 requests with malicious 10MB body requests is 2.6GB which can be absorbed by the node.
@@ -121,6 +124,25 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
             transactions_manager_config,
             policies,
         );
+        NetworkBuilder { network, request_handler, transactions }
+    }
+
+    /// Creates a new [`TransactionsManager`] and wires it to the network.
+    pub fn transactions_with_sender<Pool: TransactionPool>(
+        self,
+        pool: Pool,
+        transactions_manager_config: TransactionsManagerConfig,
+        tx_sender: UnboundedSender<NetworkTransactionEvent<N>>,
+    ) -> NetworkBuilder<TransactionsManager<Pool, N>, Eth, N> {
+        let Self { mut network, request_handler, .. } = self;
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        network.set_transactions(tx);
+        let handle = network.handle().clone();
+
+        let policies = NetworkPolicies::new(TransactionPropagationKind::default(), StrictEthAnnouncementFilter::default());
+        let transactions = TransactionsManager::new_with_sender_policy(handle, pool, rx, transactions_manager_config, policies, Some(tx_sender));
+
         NetworkBuilder { network, request_handler, transactions }
     }
 }
