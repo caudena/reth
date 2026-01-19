@@ -205,6 +205,14 @@ impl<N: NetworkPrimitives> TransactionsHandle<N> {
         Ok(res.into_values().next().unwrap_or_default())
     }
 
+    /// Clean up internal tracking for the given transaction hashes.
+    pub fn cleanup_transactions(&self, hashes: Vec<TxHash>) {
+        if hashes.is_empty() {
+            return;
+        }
+        self.send(TransactionsCommand::CleanupTransactions(hashes))
+    }
+
     /// Requests the transactions directly from the given peer.
     ///
     /// Returns `None` if the peer is not connected.
@@ -1218,6 +1226,11 @@ where
                 let sender = self.peers.get(&peer_id).map(|peer| peer.request_tx.clone());
                 peer_request_sender.send(sender).ok();
             }
+            TransactionsCommand::CleanupTransactions(hashes) => {
+                for hash in hashes {
+                    self.transactions_by_peers.remove(&hash);
+                }
+            }
         }
     }
 
@@ -2059,6 +2072,8 @@ enum TransactionsCommand<N: NetworkPrimitives = EthNetworkPrimitives> {
         peer_id: PeerId,
         peer_request_sender: oneshot::Sender<Option<PeerRequestSender<PeerRequest<N>>>>,
     },
+    /// Clean up internal tracking for the given transaction hashes.
+    CleanupTransactions(Vec<TxHash>),
 }
 
 /// All events related to transactions emitted by the network.
