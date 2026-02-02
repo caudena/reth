@@ -3,7 +3,9 @@
 use std::{
     collections::HashSet,
     io::{self, ErrorKind},
+    net::IpAddr,
     path::Path,
+    sync::Arc,
     time::Duration,
 };
 
@@ -119,7 +121,7 @@ impl Default for ConnectionsConfig {
 }
 
 /// Config type for initiating a `PeersManager` instance.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct PeersConfig {
@@ -166,7 +168,51 @@ pub struct PeersConfig {
     /// This acts as an IP based rate limit.
     #[cfg_attr(feature = "serde", serde(default, with = "humantime_serde"))]
     pub incoming_ip_throttle_duration: Duration,
+    /// Optional IP filter function. If set, only IPs for which this returns `true` will be allowed.
+    /// This can be used for country/region-based filtering.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub ip_filter: Option<Arc<dyn Fn(&IpAddr) -> bool + Send + Sync>>,
 }
+
+impl std::fmt::Debug for PeersConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeersConfig")
+            .field("refill_slots_interval", &self.refill_slots_interval)
+            .field("trusted_nodes", &self.trusted_nodes)
+            .field("trusted_nodes_only", &self.trusted_nodes_only)
+            .field("trusted_nodes_resolution_interval", &self.trusted_nodes_resolution_interval)
+            .field("max_backoff_count", &self.max_backoff_count)
+            .field("basic_nodes", &self.basic_nodes)
+            .field("ban_duration", &self.ban_duration)
+            .field("ban_list", &self.ban_list)
+            .field("connection_info", &self.connection_info)
+            .field("reputation_weights", &self.reputation_weights)
+            .field("backoff_durations", &self.backoff_durations)
+            .field("incoming_ip_throttle_duration", &self.incoming_ip_throttle_duration)
+            .field("ip_filter", &self.ip_filter.as_ref().map(|_| "<filter>"))
+            .finish()
+    }
+}
+
+impl PartialEq for PeersConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.refill_slots_interval == other.refill_slots_interval
+            && self.trusted_nodes == other.trusted_nodes
+            && self.trusted_nodes_only == other.trusted_nodes_only
+            && self.trusted_nodes_resolution_interval == other.trusted_nodes_resolution_interval
+            && self.max_backoff_count == other.max_backoff_count
+            && self.basic_nodes == other.basic_nodes
+            && self.ban_duration == other.ban_duration
+            && self.ban_list == other.ban_list
+            && self.connection_info == other.connection_info
+            && self.reputation_weights == other.reputation_weights
+            && self.backoff_durations == other.backoff_durations
+            && self.incoming_ip_throttle_duration == other.incoming_ip_throttle_duration
+        // ip_filter is intentionally ignored for equality comparison
+    }
+}
+
+impl Eq for PeersConfig {}
 
 impl Default for PeersConfig {
     fn default() -> Self {
@@ -184,6 +230,7 @@ impl Default for PeersConfig {
             basic_nodes: Default::default(),
             max_backoff_count: 5,
             incoming_ip_throttle_duration: INBOUND_IP_THROTTLE_DURATION,
+            ip_filter: None,
         }
     }
 }
@@ -277,6 +324,13 @@ impl PeersConfig {
     /// Configures how long to backoff peers that are we failed to connect to for non-fatal reasons
     pub const fn with_backoff_durations(mut self, backoff_durations: PeerBackoffDurations) -> Self {
         self.backoff_durations = backoff_durations;
+        self
+    }
+
+    /// Sets an IP filter function for country/region-based filtering.
+    /// Only IPs for which the filter returns `true` will be allowed to connect.
+    pub fn with_ip_filter(mut self, filter: Arc<dyn Fn(&IpAddr) -> bool + Send + Sync>) -> Self {
+        self.ip_filter = Some(filter);
         self
     }
 

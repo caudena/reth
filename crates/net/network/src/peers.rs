@@ -44,7 +44,6 @@ use tracing::{trace, warn};
 /// From this type, connections to peers are established or disconnected, see [`PeerAction`].
 ///
 /// The [`PeersManager`] will be notified on peer related changes
-#[derive(Debug)]
 pub struct PeersManager {
     /// All peers known to the network
     peers: HashMap<PeerId, Peer>,
@@ -90,6 +89,26 @@ pub struct PeersManager {
     net_connection_state: NetworkConnectionState,
     /// How long to temporarily ban ip on an incoming connection attempt.
     incoming_ip_throttle_duration: Duration,
+    /// Optional IP filter for country/region-based filtering.
+    ip_filter: Option<std::sync::Arc<dyn Fn(&IpAddr) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for PeersManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeersManager")
+            .field("peers", &self.peers.len())
+            .field("trusted_peer_ids", &self.trusted_peer_ids.len())
+            .field("queued_actions", &self.queued_actions.len())
+            .field("connection_info", &self.connection_info)
+            .field("ban_list", &self.ban_list)
+            .field("backed_off_peers", &self.backed_off_peers.len())
+            .field("ban_duration", &self.ban_duration)
+            .field("trusted_nodes_only", &self.trusted_nodes_only)
+            .field("max_backoff_count", &self.max_backoff_count)
+            .field("net_connection_state", &self.net_connection_state)
+            .field("ip_filter", &self.ip_filter.as_ref().map(|_| "<filter>"))
+            .finish()
+    }
 }
 
 impl PeersManager {
@@ -108,6 +127,7 @@ impl PeersManager {
             basic_nodes,
             max_backoff_count,
             incoming_ip_throttle_duration,
+            ip_filter,
         } = config;
         let (manager_tx, handle_rx) = mpsc::unbounded_channel();
         let now = Instant::now();
@@ -161,6 +181,7 @@ impl PeersManager {
             max_backoff_count,
             net_connection_state: NetworkConnectionState::default(),
             incoming_ip_throttle_duration,
+            ip_filter,
         }
     }
 
@@ -238,15 +259,22 @@ impl PeersManager {
 
     /// Invoked when a new _incoming_ tcp connection is accepted.
     ///
-    /// returns an error if the inbound ip address is on the ban list
+    /// returns an error if the inbound ip address is on the ban list or filtered by ip_filter
     pub(crate) fn on_incoming_pending_session(
         &mut self,
         addr: IpAddr,
     ) -> Result<(), InboundConnectionError> {
         if self.ban_list.is_banned_ip(&addr) {
-            return Err(InboundConnectionError::IpBanned)
+            return Err(InboundConnectionError::IpBanned);
         }
 
+        // Check IP filter (country/region filtering)
+        // Return ExceedsCapacity instead of IpBanned to not reveal filtering
+        if let Some(ref filter) = self.ip_filter
+            && !filter(&addr) {
+                trace!(target: "net::peers", ?addr, "IP rejected by filter");
+                return Err(InboundConnectionError::ExceedsCapacity);
+            }
         // check if we even have slots for a new incoming connection
         if !self.connection_info.has_in_capacity() {
             if self.trusted_peer_ids.is_empty() {
@@ -889,11 +917,23 @@ impl PeersManager {
     ///
     /// Returns `None` if no peer is available.
     fn best_unconnected(&mut self) -> Option<(PeerId, &mut Peer)> {
-        let mut unconnected = self.peers.iter_mut().filter(|(_, peer)| {
-            !peer.is_backed_off() &&
-                !peer.is_banned() &&
-                peer.state.is_unconnected() &&
-                (!self.trusted_nodes_only || peer.is_trusted())
+        // Clone the filter to use in the closure
+        let ip_filter = self.ip_filter.clone();
+        let trusted_nodes_only = self.trusted_nodes_only;
+
+        let mut unconnected = self.peers.iter_mut().filter(move |(_, peer)| {
+            if peer.is_backed_off() || peer.is_banned() || !peer.state.is_unconnected() {
+                return false;
+            }
+            if trusted_nodes_only && !peer.is_trusted() {
+                return false;
+            }
+            // Apply IP filter for outbound connections
+            if let Some(ref filter) = ip_filter
+                && !filter(&peer.addr.tcp().ip()) {
+                    return false;
+                }
+            true
         });
 
         // keep track of the best peer, if there's one
