@@ -268,8 +268,6 @@ impl PeersManager {
             return Err(InboundConnectionError::IpBanned);
         }
 
-        // Check IP filter (country/region filtering)
-        // Return ExceedsCapacity instead of IpBanned to not reveal filtering
         if let Some(ref filter) = self.ip_filter
             && !filter(&addr) {
                 trace!(target: "net::peers", ?addr, "IP rejected by filter");
@@ -917,7 +915,6 @@ impl PeersManager {
     ///
     /// Returns `None` if no peer is available.
     fn best_unconnected(&mut self) -> Option<(PeerId, &mut Peer)> {
-        // Clone the filter to use in the closure
         let ip_filter = self.ip_filter.clone();
         let trusted_nodes_only = self.trusted_nodes_only;
 
@@ -928,7 +925,6 @@ impl PeersManager {
             if trusted_nodes_only && !peer.is_trusted() {
                 return false;
             }
-            // Apply IP filter for outbound connections
             if let Some(ref filter) = ip_filter
                 && !filter(&peer.addr.tcp().ip()) {
                     return false;
