@@ -33,7 +33,7 @@ use crate::{
     session::SessionManager,
     state::NetworkState,
     swarm::{Swarm, SwarmEvent},
-    transactions::NetworkTransactionEvent,
+    transactions::{get_unix_timestamp, NetworkTransactionEvent},
     FetchClient, NetworkBuilder,
 };
 use futures::{Future, StreamExt};
@@ -622,6 +622,7 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
                 self.notify_tx_manager(NetworkTransactionEvent::IncomingPooledTransactionHashes {
                     peer_id,
                     msg,
+                    observed_at_ms: get_unix_timestamp(),
                 });
             }
             PeerMessage::EthRequest(req) => {
@@ -631,6 +632,7 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
                 self.notify_tx_manager(NetworkTransactionEvent::IncomingTransactions {
                     peer_id,
                     msg,
+                    observed_at_ms: get_unix_timestamp(),
                 });
             }
             PeerMessage::SendTransactions(_) => {
@@ -1150,7 +1152,7 @@ impl<N: NetworkPrimitives> Future for NetworkManager<N> {
         if maybe_more_handle_messages || maybe_more_swarm_events {
             // make sure we're woken up again
             cx.waker().wake_by_ref();
-            return Poll::Pending
+            return Poll::Pending;
         }
 
         this.update_poll_metrics(start, poll_durations);

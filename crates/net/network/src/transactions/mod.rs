@@ -607,10 +607,15 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         &mut self,
         peer_id: PeerId,
         msg: NewPooledTransactionHashes,
+        observed_at_ms: u64,
     ) {
         let send_status = self.trx_events.as_ref().unwrap().send((
-            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() },
-            get_unix_timestamp(),
+            NetworkTransactionEvent::IncomingPooledTransactionHashes {
+                peer_id,
+                msg: msg.clone(),
+                observed_at_ms,
+            },
+            observed_at_ms,
         ));
 
         match send_status {
@@ -1328,12 +1333,16 @@ where
     /// Handles dedicated transaction events related to the `eth` protocol.
     fn on_network_tx_event(&mut self, event: NetworkTransactionEvent<N>) {
         match event {
-            NetworkTransactionEvent::IncomingTransactions { peer_id, msg } => {
+            NetworkTransactionEvent::IncomingTransactions { peer_id, msg, observed_at_ms } => {
                 let msg_clone = msg.clone();
 
                 let send_status = self.trx_events.as_ref().unwrap().send((
-                    NetworkTransactionEvent::IncomingTransactions { peer_id, msg: msg_clone },
-                    get_unix_timestamp(),
+                    NetworkTransactionEvent::IncomingTransactions {
+                        peer_id,
+                        msg: msg_clone,
+                        observed_at_ms,
+                    },
+                    observed_at_ms,
                 ));
                 match send_status {
                     Ok(_) => {},
@@ -1361,9 +1370,11 @@ where
                     self.report_peer_bad_transactions(peer_id);
                 }
             }
-            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg } => {
-                self.on_new_pooled_transaction_hashes(peer_id, msg)
-            }
+            NetworkTransactionEvent::IncomingPooledTransactionHashes {
+                peer_id,
+                msg,
+                observed_at_ms,
+            } => self.on_new_pooled_transaction_hashes(peer_id, msg, observed_at_ms),
             NetworkTransactionEvent::GetPooledTransactions { peer_id, request, response } => {
                 self.on_get_pooled_transactions(peer_id, request, response)
             }
@@ -2091,6 +2102,8 @@ pub enum NetworkTransactionEvent<N: NetworkPrimitives = EthNetworkPrimitives> {
         peer_id: PeerId,
         /// The received transactions.
         msg: Transactions<N::BroadcastedTransaction>,
+        /// Unix timestamp in milliseconds when the message was received from the wire.
+        observed_at_ms: u64,
     },
     /// Represents the event of receiving a list of transaction hashes from a peer.
     IncomingPooledTransactionHashes {
@@ -2098,6 +2111,8 @@ pub enum NetworkTransactionEvent<N: NetworkPrimitives = EthNetworkPrimitives> {
         peer_id: PeerId,
         /// The received new pooled transaction hashes.
         msg: NewPooledTransactionHashes,
+        /// Unix timestamp in milliseconds when the message was received from the wire.
+        observed_at_ms: u64,
     },
     /// Represents the event of receiving a `GetPooledTransactions` request from a peer.
     GetPooledTransactions {
@@ -2139,8 +2154,9 @@ impl Default for PendingPoolImportsInfo {
     }
 }
 
+/// Returns the current Unix timestamp in milliseconds.
 #[inline]
-fn get_unix_timestamp() -> u64 {
+pub fn get_unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
@@ -2249,6 +2265,7 @@ mod tests {
         transactions.on_network_tx_event(NetworkTransactionEvent::IncomingTransactions {
             peer_id: *handle1.peer_id(),
             msg: Transactions(vec![signed_tx.clone()]),
+            observed_at_ms: 0,
         });
         poll_fn(|cx| {
             let _ = transactions.poll_unpin(cx);
@@ -2322,6 +2339,7 @@ mod tests {
         transactions.on_network_tx_event(NetworkTransactionEvent::IncomingTransactions {
             peer_id: *handle1.peer_id(),
             msg: Transactions(vec![signed_tx.clone()]),
+            observed_at_ms: 0,
         });
         poll_fn(|cx| {
             let _ = transactions.poll_unpin(cx);
@@ -2397,6 +2415,7 @@ mod tests {
             msg: NewPooledTransactionHashes::from(NewPooledTransactionHashes66::from(
                 txs_hashes.clone(),
             )),
+            observed_at_ms: 0,
         });
 
         // mock session of peer_1 receives request
@@ -2491,6 +2510,7 @@ mod tests {
         transactions.on_network_tx_event(NetworkTransactionEvent::IncomingTransactions {
             peer_id: *handle1.peer_id(),
             msg: Transactions(vec![signed_tx.clone()]),
+            observed_at_ms: 0,
         });
         assert!(transactions
             .transactions_by_peers
@@ -2776,7 +2796,7 @@ mod tests {
         // peer_2 announces same hashes as peer_1
         let msg =
             NewPooledTransactionHashes::Eth66(NewPooledTransactionHashes66(seen_hashes.to_vec()));
-        tx_manager.on_new_pooled_transaction_hashes(peer_id_2, msg);
+        tx_manager.on_new_pooled_transaction_hashes(peer_id_2, msg, 0);
 
         let tx_fetcher = &mut tx_manager.transaction_fetcher;
 
@@ -2995,7 +3015,7 @@ mod tests {
             hashes: vec![known_tx_hash, unknown_tx_hash],
         });
 
-        tx_manager.on_new_pooled_transaction_hashes(peer_id, announcement_msg);
+        tx_manager.on_new_pooled_transaction_hashes(peer_id, announcement_msg, 0);
 
         poll_fn(|cx| {
             let _ = tx_manager.poll_unpin(cx);

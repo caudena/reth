@@ -88,7 +88,7 @@ async fn main() -> eyre::Result<()> {
                 let Some(transaction_message) = transaction_message else {break};
                 match transaction_message {
                     NetworkTransactionEvent::IncomingTransactions { .. } => {}
-                    NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg } => {
+                    NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg, .. } => {
                         println!("Received incoming tx hashes broadcast: {peer_id:?}, {msg:?}");
                     }
                     NetworkTransactionEvent::GetPooledTransactions { .. } => {}
