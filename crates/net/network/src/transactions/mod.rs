@@ -73,7 +73,7 @@ use std::{
         Arc,
     },
     task::{Context, Poll},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot, oneshot::error::RecvError};
@@ -306,7 +306,7 @@ pub struct TransactionsManager<
     /// From which we get all new incoming transaction related messages.
     network_events: EventStream<NetworkEvent<PeerRequest<N>>>,
     ///Tx sender
-    trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
+    trx_events: Option<UnboundedSender<(NetworkTransactionEvent<N>, u64)>>,
     /// Transaction fetcher to handle inflight and missing transaction requests.
     transaction_fetcher: TransactionFetcher<N>,
     /// All currently pending transactions grouped by peers.
@@ -398,7 +398,7 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         from_network: mpsc::UnboundedReceiver<NetworkTransactionEvent<N>>,
         transactions_manager_config: TransactionsManagerConfig,
         policies: PBundle,
-        trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
+        trx_events: Option<UnboundedSender<(NetworkTransactionEvent<N>, u64)>>,
     ) -> Self {
         let mut manager = Self::with_policy(network, pool, from_network, transactions_manager_config, policies);
         manager.trx_events = trx_events;
@@ -608,8 +608,10 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         peer_id: PeerId,
         msg: NewPooledTransactionHashes,
     ) {
-        let send_status = self.trx_events.as_ref().unwrap().send(
-            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() });
+        let send_status = self.trx_events.as_ref().unwrap().send((
+            NetworkTransactionEvent::IncomingPooledTransactionHashes { peer_id, msg: msg.clone() },
+            get_unix_timestamp(),
+        ));
 
         match send_status {
             Ok(_) => {},
@@ -1329,8 +1331,10 @@ where
             NetworkTransactionEvent::IncomingTransactions { peer_id, msg } => {
                 let msg_clone = msg.clone();
 
-                let send_status = self.trx_events.as_ref().unwrap().send(
-                    NetworkTransactionEvent::IncomingTransactions { peer_id, msg: msg_clone });
+                let send_status = self.trx_events.as_ref().unwrap().send((
+                    NetworkTransactionEvent::IncomingTransactions { peer_id, msg: msg_clone },
+                    get_unix_timestamp(),
+                ));
                 match send_status {
                     Ok(_) => {},
                     Err(err) => {
@@ -2133,6 +2137,11 @@ impl Default for PendingPoolImportsInfo {
     fn default() -> Self {
         Self::new(DEFAULT_MAX_COUNT_PENDING_POOL_IMPORTS)
     }
+}
+
+#[inline]
+fn get_unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 #[derive(Debug, Default)]
