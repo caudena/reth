@@ -306,7 +306,7 @@ pub struct TransactionsManager<
     /// From which we get all new incoming transaction related messages.
     network_events: EventStream<NetworkEvent<PeerRequest<N>>>,
     ///Tx sender
-    trx_events: Option<UnboundedSender<(NetworkTransactionEvent<N>, u64)>>,
+    trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
     /// Transaction fetcher to handle inflight and missing transaction requests.
     transaction_fetcher: TransactionFetcher<N>,
     /// All currently pending transactions grouped by peers.
@@ -398,7 +398,7 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         from_network: mpsc::UnboundedReceiver<NetworkTransactionEvent<N>>,
         transactions_manager_config: TransactionsManagerConfig,
         policies: PBundle,
-        trx_events: Option<UnboundedSender<(NetworkTransactionEvent<N>, u64)>>,
+        trx_events: Option<UnboundedSender<NetworkTransactionEvent<N>>>,
     ) -> Self {
         let mut manager = Self::with_policy(network, pool, from_network, transactions_manager_config, policies);
         manager.trx_events = trx_events;
@@ -609,14 +609,13 @@ impl<Pool: TransactionPool, N: NetworkPrimitives, PBundle: TransactionPolicies>
         msg: NewPooledTransactionHashes,
         observed_at_ms: u64,
     ) {
-        let send_status = self.trx_events.as_ref().unwrap().send((
+        let send_status = self.trx_events.as_ref().unwrap().send(
             NetworkTransactionEvent::IncomingPooledTransactionHashes {
                 peer_id,
                 msg: msg.clone(),
                 observed_at_ms,
             },
-            observed_at_ms,
-        ));
+        );
 
         match send_status {
             Ok(_) => {},
@@ -1336,14 +1335,13 @@ where
             NetworkTransactionEvent::IncomingTransactions { peer_id, msg, observed_at_ms } => {
                 let msg_clone = msg.clone();
 
-                let send_status = self.trx_events.as_ref().unwrap().send((
+                let send_status = self.trx_events.as_ref().unwrap().send(
                     NetworkTransactionEvent::IncomingTransactions {
                         peer_id,
                         msg: msg_clone,
                         observed_at_ms,
                     },
-                    observed_at_ms,
-                ));
+                );
                 match send_status {
                     Ok(_) => {},
                     Err(err) => {

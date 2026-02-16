@@ -132,7 +132,7 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
         self,
         pool: Pool,
         transactions_manager_config: TransactionsManagerConfig,
-        tx_sender: UnboundedSender<(NetworkTransactionEvent<N>, u64)>,
+        tx_sender: UnboundedSender<NetworkTransactionEvent<N>>,
     ) -> NetworkBuilder<TransactionsManager<Pool, N>, Eth, N> {
         let Self { mut network, request_handler, .. } = self;
 
