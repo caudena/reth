@@ -8324,7 +8324,7 @@ dependencies = [
 
 [[package]]
 name = "reth-engine-service"
-version = "1.11.0"
+version = "1.11.1"
 dependencies = [
  "alloy-eips",
  "futures",
@@ -9590,6 +9590,24 @@ dependencies = [
 [[package]]
 name = "reth-primitives"
 version = "1.11.1"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rlp",
+ "arbitrary",
+ "c-kzg",
+ "codspeed-criterion-compat",
+ "once_cell",
+ "proptest",
+ "proptest-arbitrary-interop",
+ "reth-codecs",
+ "reth-ethereum-forks",
+ "reth-ethereum-primitives",
+ "reth-primitives-traits",
+ "reth-static-file-types",
+]
 
 [[package]]
 name = "reth-primitives-traits"
