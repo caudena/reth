@@ -55,6 +55,8 @@
 use alloy_primitives as _;
 
 pub mod cli;
+/// rpc_ext
+pub mod rpc_ext;
 
 /// Re-exported utils.
 pub mod utils {

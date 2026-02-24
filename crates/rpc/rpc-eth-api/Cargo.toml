@@ -45,12 +45,6 @@ alloy-rpc-types-mev.workspace = true
 alloy-consensus.workspace = true
 
 alloy-rpc-types-trace.workspace = true
-alloy-rpc-types.workspace = true
-
-serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
-
-revm-primitives.workspace = true
 
 # rpc
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
