@@ -779,6 +779,10 @@ impl PeersManager {
             return
         }
 
+        if self.ip_filter.as_ref().is_some_and(|filter| !filter(&addr.tcp().ip())) {
+            return;
+        }
+
         match self.peers.entry(peer_id) {
             Entry::Occupied(mut entry) => {
                 let peer = entry.get_mut();
