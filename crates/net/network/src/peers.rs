@@ -779,6 +779,17 @@ impl PeersManager {
             return
         }
 
+        let ip = addr.tcp().ip();
+        match ip {
+            IpAddr::V4(v4) if v4.is_loopback() || v4.is_private() || v4.is_unspecified() => {
+                return
+            }
+            IpAddr::V6(v6) if v6.is_loopback() || v6.is_unspecified() => {
+                return
+            }
+            _ => {}
+        }
+
         match self.peers.entry(peer_id) {
             Entry::Occupied(mut entry) => {
                 let peer = entry.get_mut();
