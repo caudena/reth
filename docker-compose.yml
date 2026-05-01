@@ -1,0 +1,73 @@
+services:
+  reth:
+    image: "caudenacom/reth:${BUDDY_EXECUTION_REVISION}"
+    container_name: reth
+    restart: unless-stopped
+    ports:
+      - "${RPC_ADDR}:${METRICS_PORT}:9002"
+      - "${RPC_ADDR}:8545:8547"
+      - "${RPC_ADDR}:8546:8548"
+      - "${NODE_IP}:30304:30304"
+      - "${NODE_IP}:30304:30304/udp"
+    command: >
+      node
+      --chain mainnet
+      --datadir=/data
+      --port 30304
+      --discovery.port 30304
+      --authrpc.addr=0.0.0.0
+      --authrpc.port=8551
+      --authrpc.jwtsecret=/data/jwt.hex
+      --http
+      --http.api all
+      --http.addr=0.0.0.0
+      --http.port=8547
+      --ws
+      --ws.addr=0.0.0.0
+      --ws.port=8548
+      --rpc.max-connections=4096
+      --rpc.max-response-size=1000
+      --db.read-transaction-timeout=0
+      --metrics=0.0.0.0:9002
+      --log.file.directory=/logs
+      --log.file.max-size=200
+      --log.file.max-files=5
+      --log.file.filter=info
+    volumes:
+      - /home/deploy/eth_data:/data
+      - /home/deploy/eth_node/logs:/logs
+    networks:
+      - el-cl
+
+  lighthouse:
+    image: sigp/lighthouse:latest
+    container_name: lighthouse
+    restart: unless-stopped
+    ports:
+      - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}"
+      - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}/udp"
+      - "127.0.0.1:5052:5052"
+      - "${RPC_ADDR}:${LIGHTHOUSE_METRICS_PORT}:5054"
+    command: >
+      lighthouse bn
+      --network mainnet
+      --datadir /data
+      --execution-endpoint http://reth:8551
+      --execution-jwt /jwt.hex
+      --checkpoint-sync-url https://mainnet.checkpoint.sigp.io
+      --http
+      --http-address 0.0.0.0
+      --http-port 5052
+      --port ${LIGHTHOUSE_P2P_PORT}
+      --metrics
+      --metrics-address 0.0.0.0
+      --metrics-port 5054
+    volumes:
+      - /home/deploy/lighthouse_data:/data
+      - /home/deploy/eth_data/jwt.hex:/jwt.hex:ro
+      - /home/deploy/lighthouse_beacon/logs:/logs
+    networks:
+      - el-cl
+
+networks:
+  el-cl:
