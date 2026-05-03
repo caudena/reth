@@ -39,35 +39,7 @@ services:
     networks:
       - el-cl
 
-  lighthouse:
-    image: sigp/lighthouse:latest
-    container_name: lighthouse
-    restart: unless-stopped
-    ports:
-      - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}"
-      - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}/udp"
-      - "127.0.0.1:5052:5052"
-      - "${RPC_ADDR}:${LIGHTHOUSE_METRICS_PORT}:5054"
-    command: >
-      lighthouse bn
-      --network mainnet
-      --datadir /data
-      --execution-endpoint http://reth:8551
-      --execution-jwt /jwt.hex
-      --checkpoint-sync-url https://mainnet.checkpoint.sigp.io
-      --http
-      --http-address 0.0.0.0
-      --http-port 5052
-      --port ${LIGHTHOUSE_P2P_PORT}
-      --metrics
-      --metrics-address 0.0.0.0
-      --metrics-port 5054
-    volumes:
-      - /home/deploy/lighthouse_data:/data
-      - /home/deploy/eth_data/jwt.hex:/jwt.hex:ro
-      - /home/deploy/lighthouse_beacon/logs:/logs
-    networks:
-      - el-cl
-
 networks:
   el-cl:
+    name: el-cl
+    driver: bridge
