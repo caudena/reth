@@ -9,6 +9,7 @@ services:
       - "${RPC_ADDR}:8546:8548"
       - "${NODE_IP}:30304:30304"
       - "${NODE_IP}:30304:30304/udp"
+      - "${NODE_IP}:9200:9200/udp"
     command: >
       node
       --chain mainnet
