@@ -5,8 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "${RPC_ADDR}:${METRICS_PORT}:9002"
-      - "${RPC_ADDR}:8545:8547"
-      - "${RPC_ADDR}:8546:8548"
+      - "${RPC_ADDR}:8547:8547"
+      - "${RPC_ADDR}:8548:8548"
       - "${NODE_IP}:30304:30304"
       - "${NODE_IP}:30304:30304/udp"
       - "${NODE_IP}:9200:9200/udp"
