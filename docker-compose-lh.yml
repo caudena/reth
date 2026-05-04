@@ -3,6 +3,7 @@ services:
     image: sigp/lighthouse:latest
     container_name: lighthouse
     restart: unless-stopped
+    user: "${DEPLOY_UID}:${DEPLOY_GID}"
     ports:
       - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}"
       - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}/udp"
