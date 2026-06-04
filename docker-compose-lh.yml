@@ -7,11 +7,12 @@ services:
     ports:
       - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}"
       - "${NODE_IP}:${LIGHTHOUSE_P2P_PORT}:${LIGHTHOUSE_P2P_PORT}/udp"
-      - "127.0.0.1:5052:5052"
+      - "${RPC_ADDR}:5052:5052"
       - "${RPC_ADDR}:${LIGHTHOUSE_METRICS_PORT}:5054"
     command: >
       lighthouse bn
       --network mainnet
+      --semi-supernode
       --datadir /data
       --execution-endpoint http://reth:8551
       --execution-jwt /jwt.hex
