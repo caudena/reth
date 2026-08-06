@@ -12,7 +12,11 @@ use futures::join;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use jsonrpsee_types::ErrorObjectOwned;
 use reth_node_api::BlockBody;
-use reth_rpc_eth_api::helpers::{EthBlocks, FullEthApi, Trace};
+use reth_rpc_eth_api::{
+    helpers::{EthBlocks, FullEthApi, Trace},
+    FromEthApiError,
+};
+use revm_inspectors::tracing::parity::populate_state_diff;
 use revm_inspectors::tracing::TracingInspectorConfig;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
@@ -83,6 +87,7 @@ where
             async move {
                 let mut trace_types: HashSet<TraceType> = HashSet::default();
                 trace_types.insert(TraceType::Trace);
+                trace_types.insert(TraceType::StateDiff);
 
                 let block_id = BlockId::Number(number);
 
@@ -92,24 +97,15 @@ where
                         None,
                         TracingInspectorConfig::from_parity_config(&trace_types),
                         move |tx_info, mut ctx| {
-                            let full_trace = ctx
+                            let mut full_trace = ctx
                                 .take_inspector()
                                 .into_parity_builder()
                                 .into_trace_results(&ctx.result, &trace_types);
 
-                            // if let Some(ref mut state_diff) = full_trace.state_diff {
-                            //     populate_state_diff(state_diff, &ctx.db, ctx.state.iter())
-                            //         .map_err(|trace_res_err| {
-                            //             ErrorObjectOwned::owned(
-                            //                 1,
-                            //                 format!(
-                            //                     "Error getting block traces result {} for block{}",
-                            //                     trace_res_err, number
-                            //                 ),
-                            //                 None::<()>,
-                            //             )
-                            //         })?;
-                            // }
+                            if let Some(ref mut state_diff) = full_trace.state_diff {
+                                populate_state_diff(state_diff, &ctx.db, ctx.state.iter())
+                                    .map_err(Eth::Error::from_eth_err)?;
+                            }
 
                             let trace = TraceResultsWithTransactionHash {
                                 transaction_hash: tx_info.hash.expect("tx hash is set"),
